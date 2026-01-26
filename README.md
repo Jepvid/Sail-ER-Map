@@ -1,4 +1,4 @@
-# HM64 Entrance Rando Map
+# Sail-ER-Map
 
 Live entrance‑randomizer flowchart for Shipwright → Sail → WebSocket.
 
@@ -56,4 +56,3 @@ If not, they are rendered **two‑way**.
 
 - If **Connect** doesn’t work, confirm Sail is running and the port matches `43385`.
 - If the map is empty, make sure the seed uses entrance randomizer and you’ve discovered at least one entrance.
-
