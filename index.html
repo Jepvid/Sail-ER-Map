@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HM64 Entrance Rando Map</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg">
+      <div class="grain"></div>
+    </div>
+
+    <header class="hero">
+      <div class="brand">
+        <div class="logo">HM64</div>
+        <div class="title">
+          <h1>Entrance Rando Map</h1>
+          <p>Live flowchart from Shipwright → Sail → Local WebSocket</p>
+        </div>
+      </div>
+
+      <div class="status">
+        <div class="pill" id="wsStatus">Disconnected</div>
+        <div class="pill pill-muted" id="seedStatus">Seed: unknown</div>
+        <div class="pill pill-accent" id="modeStatus">Entrances: —</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel controls">
+        <h2>Connection</h2>
+        <div class="field">
+          <label for="wsUrl">WebSocket URL</label>
+          <input id="wsUrl" type="text" value="ws://127.0.0.1:43385/ws" />
+        </div>
+        <div class="actions">
+          <button id="connectBtn">Connect</button>
+          <button id="disconnectBtn" class="ghost" disabled>Disconnect</button>
+          <button id="loadStateBtn" class="ghost">Load /state</button>
+        </div>
+        <div class="note">
+          <span>Handshake:</span> we only start streaming once the page confirms.
+        </div>
+      </section>
+
+      <section class="panel legend">
+        <h2>Legend</h2>
+        <div class="legend-row">
+          <span class="legend-line two-way"></span>
+          <span>Coupled (two-way)</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-line one-way"></span>
+          <span>Decoupled (one-way)</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-dot"></span>
+          <span>Entrance node</span>
+        </div>
+      </section>
+
+      <section class="panel map">
+        <div class="map-header">
+          <h2>Flowchart</h2>
+          <div class="map-tools">
+            <button id="resetBtn" class="ghost">Reset View</button>
+            <button id="clearBtn" class="ghost">Clear</button>
+          </div>
+        </div>
+        <div class="map-shell">
+          <svg id="mapSvg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <marker
+                id="arrow"
+                markerWidth="12"
+                markerHeight="12"
+                refX="10"
+                refY="6"
+                orient="auto"
+              >
+                <path d="M0,0 L12,6 L0,12 Z" />
+              </marker>
+              <marker
+                id="arrow-muted"
+                markerWidth="12"
+                markerHeight="12"
+                refX="10"
+                refY="6"
+                orient="auto"
+              >
+                <path d="M0,0 L12,6 L0,12 Z" />
+              </marker>
+            </defs>
+            <g id="edges"></g>
+            <g id="nodes"></g>
+          </svg>
+          <div class="empty" id="emptyState">
+            Waiting for entrance_map data…
+          </div>
+        </div>
+      </section>
+
+      <section class="panel feed">
+        <h2>Transitions</h2>
+        <div class="feed-list" id="transitionList"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
