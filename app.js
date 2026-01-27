@@ -123,9 +123,10 @@ function renderTransitions() {
   if (currentScene) {
     const current = document.createElement("div");
     current.className = "feed-item";
+    const currentLabel = currentScene.sceneName || hex(currentScene.sceneNum);
     current.innerHTML = `
       <strong>Current Scene</strong>
-      ${hex(currentScene.sceneNum)} (spawn ${currentScene.spawn})
+      ${currentLabel} (spawn ${currentScene.spawn})
     `;
     transitionList.appendChild(current);
   }
@@ -133,9 +134,11 @@ function renderTransitions() {
   for (const t of last) {
     const item = document.createElement("div");
     item.className = "feed-item";
+    const fromLabel = t.fromName || hex(t.fromScene);
+    const toLabel = t.toName || hex(t.toScene);
     item.innerHTML = `
       <strong>Exit ${hex(t.exit)}</strong>
-      ${hex(t.fromScene)} → ${hex(t.toScene)} (spawn ${t.spawn})
+      ${fromLabel} → ${toLabel} (spawn ${t.spawn})
     `;
     transitionList.appendChild(item);
   }
@@ -156,6 +159,7 @@ function render() {
   const ids = Array.from(new Set(connections.flatMap((c) => [c.fromEntrance, c.toEntrance])));
   const adjacency = buildAdjacency(connections);
   const clusters = findClusters(ids, adjacency);
+  const nameByEntrance = buildEntranceNameMap(connections);
 
   const positions = layoutClusters(clusters, adjacency, 1200, 800);
 
@@ -193,7 +197,7 @@ function render() {
     label.setAttribute("class", "node-label");
     label.setAttribute("x", pos.x + 14);
     label.setAttribute("y", pos.y + 4);
-    label.textContent = hex(id);
+    label.textContent = nameByEntrance.get(id) || hex(id);
 
     nodesLayer.appendChild(circle);
     nodesLayer.appendChild(label);
@@ -214,6 +218,19 @@ function buildAdjacency(connections) {
     adjacency.get(c.toEntrance).add(c.fromEntrance);
   }
   return adjacency;
+}
+
+function buildEntranceNameMap(connections) {
+  const map = new Map();
+  for (const c of connections) {
+    if (c.fromName && !map.has(c.fromEntrance)) {
+      map.set(c.fromEntrance, c.fromName);
+    }
+    if (c.toName && !map.has(c.toEntrance)) {
+      map.set(c.toEntrance, c.toName);
+    }
+  }
+  return map;
 }
 
 function findClusters(ids, adjacency) {

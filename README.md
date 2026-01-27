@@ -15,7 +15,7 @@ Sail receives those packets and exposes them locally at:
 - WebSocket: `ws://127.0.0.1:43385/ws`
 - HTTP state snapshot: `http://127.0.0.1:43385/state`
 
-The page handshakes over WebSocket and then starts receiving live updates.
+The page connects over WebSocket and then starts receiving live updates.
 
 ## Usage
 
@@ -26,7 +26,6 @@ The page handshakes over WebSocket and then starts receiving live updates.
    ```
 3. Open the GitHub Pages site (or `index.html` locally).
 4. Click **Connect** to start live updates.
-   - The page sends a handshake and begins streaming.
    - Use **Load /state** if you want a one‑off snapshot.
 
 ## Controls
