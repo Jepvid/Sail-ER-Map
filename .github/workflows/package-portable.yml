@@ -38,14 +38,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run dist
 
-      - name: Upload packaged artifacts only
+      - name: Upload Linux AppImage only
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: sail-er-map-${{ matrix.os }}
-          path: |
-            dist/*.AppImage
-            dist/*.dmg
-            dist/*-mac.zip
-            dist/*.zip
-            dist/*.tar.gz
+          name: sail-er-map-linux
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+      - name: Upload macOS DMG only
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sail-er-map-macos
+          path: dist/*.dmg
+          if-no-files-found: error
+
+      - name: Upload Windows portable EXE only
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sail-er-map-windows
+          path: dist/*portable*.exe
           if-no-files-found: error

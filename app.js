@@ -154,6 +154,104 @@ function render() {
   const outPorts = computePorts(groupConnections, positions, outRadius, "out");
   const inPorts = computePorts(groupConnections, positions, inRadius, "in");
 
+  // Keep labels readable by avoiding hubs and other labels.
+  const occupied = new Set();
+  const occCell = 120;
+  const occKey = (x, y) => `${Math.round(x / occCell)}:${Math.round(y / occCell)}`;
+  const markOccupied = (x, y, pad = 0) => {
+    const r = Math.max(20, pad);
+    const minX = x - r;
+    const maxX = x + r;
+    const minY = y - r;
+    const maxY = y + r;
+    for (let xx = minX; xx <= maxX; xx += occCell / 2) {
+      for (let yy = minY; yy <= maxY; yy += occCell / 2) {
+        occupied.add(occKey(xx, yy));
+      }
+    }
+  };
+  const isFree = (x, y, pad = 0) => {
+    const r = Math.max(16, pad);
+    const minX = x - r;
+    const maxX = x + r;
+    const minY = y - r;
+    const maxY = y + r;
+    for (let xx = minX; xx <= maxX; xx += occCell / 2) {
+      for (let yy = minY; yy <= maxY; yy += occCell / 2) {
+        if (occupied.has(occKey(xx, yy))) return false;
+      }
+    }
+    return true;
+  };
+
+  const placeLabel = (baseX, baseY, text, cls, angle) => {
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const nx = -uy;
+    const ny = ux;
+    const approxW = Math.min(420, text.length * 7 + 18);
+    const approxH = 18;
+    const offsets = [1, -1, 2, -2, 3, -3, 4, -4];
+    for (const k of offsets) {
+      const ox = nx * (k * 26) + ux * 12;
+      const oy = ny * (k * 26) + uy * 12;
+      const x = baseX + ox;
+      const y = baseY + oy;
+      if (!isFree(x, y, Math.max(approxW * 0.35, approxH * 2))) continue;
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("class", cls);
+      label.setAttribute("x", x);
+      label.setAttribute("y", y);
+      label.textContent = text;
+      nodesLayer.appendChild(label);
+      markOccupied(x, y, Math.max(approxW * 0.4, approxH * 2.2));
+      return;
+    }
+    // Fallback: place it even if crowded.
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    label.setAttribute("class", cls);
+    label.setAttribute("x", baseX + nx * 24 + ux * 10);
+    label.setAttribute("y", baseY + ny * 24 + uy * 10);
+    label.textContent = text;
+    nodesLayer.appendChild(label);
+  };
+
+  // Draw hubs first so labels/ports appear above them.
+  groupIds.forEach((id) => {
+    const pos = positions.get(id);
+    if (!pos) return;
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("class", "hub-node");
+    circle.setAttribute("cx", pos.x);
+    circle.setAttribute("cy", pos.y);
+    circle.setAttribute("r", hubRadius);
+
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    label.setAttribute("class", "hub-label");
+    label.setAttribute("x", pos.x);
+    label.setAttribute("y", pos.y + 4);
+    label.textContent = id;
+
+    nodesLayer.appendChild(circle);
+    nodesLayer.appendChild(label);
+    markOccupied(pos.x, pos.y, hubRadius + 46);
+  });
+
+  // Draw ports after hubs.
+  const drawn = new Set();
+  for (const port of [...outPorts.values(), ...inPorts.values()]) {
+    const key = `${port.x.toFixed(2)}:${port.y.toFixed(2)}`;
+    if (drawn.has(key)) continue;
+    drawn.add(key);
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("class", "port-node");
+    circle.setAttribute("cx", port.x);
+    circle.setAttribute("cy", port.y);
+    circle.setAttribute("r", portRadius);
+    nodesLayer.appendChild(circle);
+    markOccupied(port.x, port.y, 26);
+  }
+
   groupConnections.forEach((c) => {
     const fromHub = positions.get(c.fromGroup);
     const toHub = positions.get(c.toGroup);
@@ -169,6 +267,7 @@ function render() {
     const uy = dy / len;
     const destX = to.x - ux * 10;
     const destY = to.y - uy * 10;
+    const angle = Math.atan2(dy, dx);
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("class", "edge");
@@ -189,57 +288,14 @@ function render() {
 
     const labelText = formatGroupEdgeLabel(c);
     if (labelText) {
-      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      label.setAttribute("class", "port-label");
-      label.setAttribute("x", from.x + 10);
-      label.setAttribute("y", from.y - 10);
-      label.textContent = labelText;
-      nodesLayer.appendChild(label);
+      placeLabel(from.x, from.y, labelText, "port-label", angle);
     }
 
     const destLabelText = formatDestinationLabel(c);
     if (destLabelText) {
-      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      label.setAttribute("class", "dest-label");
-      label.setAttribute("x", destX + 8);
-      label.setAttribute("y", destY - 6);
-      label.textContent = destLabelText;
-      nodesLayer.appendChild(label);
+      placeLabel(destX, destY, destLabelText, "dest-label", angle + Math.PI);
     }
   });
-
-  groupIds.forEach((id) => {
-    const pos = positions.get(id);
-    if (!pos) return;
-    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute("class", "hub-node");
-    circle.setAttribute("cx", pos.x);
-    circle.setAttribute("cy", pos.y);
-    circle.setAttribute("r", hubRadius);
-
-    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    label.setAttribute("class", "hub-label");
-    label.setAttribute("x", pos.x);
-    label.setAttribute("y", pos.y + 4);
-    label.textContent = id;
-
-    nodesLayer.appendChild(circle);
-    nodesLayer.appendChild(label);
-  });
-
-  // Draw ports after hubs so they sit on top.
-  const drawn = new Set();
-  for (const port of [...outPorts.values(), ...inPorts.values()]) {
-    const key = `${port.x.toFixed(2)}:${port.y.toFixed(2)}`;
-    if (drawn.has(key)) continue;
-    drawn.add(key);
-    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute("class", "port-node");
-    circle.setAttribute("cx", port.x);
-    circle.setAttribute("cy", port.y);
-    circle.setAttribute("r", portRadius);
-    nodesLayer.appendChild(circle);
-  }
 
 }
 
@@ -295,7 +351,13 @@ function buildGroupConnections(connections, groupByEntrance) {
     const fromGroup = groupByEntrance.get(c.fromEntrance) || c.fromGroupName || "Unknown";
     const toGroup = groupByEntrance.get(c.toEntrance) || c.toGroupName || "Unknown";
     if (!fromGroup || !toGroup) continue;
-    const edgeKey = `${c.fromEntrance}=>${c.toEntrance}`;
+    const a = Number(c.fromEntrance);
+    const b = Number(c.toEntrance);
+    const edgeKey = state.decoupled
+      ? `${a}=>${b}`
+      : a <= b
+        ? `${a}<=>${b}`
+        : `${b}<=>${a}`;
     if (seen.has(edgeKey)) continue;
     seen.add(edgeKey);
     edges.push({
