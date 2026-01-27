@@ -55,3 +55,49 @@ If not, they are rendered **two‑way**.
 
 - If **Connect** doesn’t work, confirm Sail is running and the port matches `43385`.
 - If the map is empty, make sure the seed uses entrance randomizer and you’ve discovered at least one entrance.
+
+## Run as a desktop app (Electron)
+
+This avoids the browser mixed-content block from `https://` GitHub Pages.
+
+1. Install deps:
+   ```bash
+   npm install
+   ```
+2. Start the desktop wrapper:
+   ```bash
+   npm start
+   ```
+
+This loads the same `index.html`, but from a desktop window so it can talk to:
+- `ws://127.0.0.1:43385/ws`
+- `http://127.0.0.1:43385/state`
+
+## Portable downloads (no install)
+
+The GitHub Action `Package Portable Electron App` now builds portable bundles
+for:
+
+- Windows
+- macOS
+- Linux (Ubuntu 22.04 runner for broader compatibility)
+
+Each artifact contains:
+
+- the app files
+- `node_modules` (Electron included)
+- one-click launchers
+
+How users run it after download:
+
+- Windows: double-click `run.bat`
+- macOS/Linux:
+  ```bash
+  chmod +x run.sh
+  ./run.sh
+  ```
+
+Sail stays separate and must be running at:
+
+- `ws://127.0.0.1:43385/ws`
+- `http://127.0.0.1:43385/state`
