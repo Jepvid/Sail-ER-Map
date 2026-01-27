@@ -162,8 +162,9 @@ function render() {
   const clusters = findClusters(groupIds, adjacency);
   const positions = layoutClusters(clusters, adjacency, groupConnections, 8000, 8000);
   compactPositions(groupIds, groupConnections, positions);
-  const hubs = groupIds.map((id) => positions.get(id)).filter(Boolean);
   const hubRadius = 75;
+  resolveCollisions(groupIds, groupConnections, positions, hubRadius);
+  const hubs = groupIds.map((id) => positions.get(id)).filter(Boolean);
   const portRadius = 7.5;
   const outRadius = hubRadius + 26;
   const inRadius = state.decoupled ? hubRadius + 18 : hubRadius + 26;
@@ -304,8 +305,15 @@ function render() {
     const destY = to.y - uy * 10;
     const angle = Math.atan2(dy, dx);
     const lerp = (a, b, t) => a + (b - a) * t;
-    const fromLabelBase = { x: lerp(from.x, to.x, 0.2), y: lerp(from.y, to.y, 0.2) };
-    const toLabelBase = { x: lerp(from.x, to.x, 0.8), y: lerp(from.y, to.y, 0.8) };
+    const labelOffset = 120;
+    const fromLabelBase = {
+      x: from.x + ux * labelOffset,
+      y: from.y + uy * labelOffset,
+    };
+    const toLabelBase = {
+      x: to.y - ux * labelOffset,
+      y: to.y - uy * labelOffset,
+    };
 
     // Curve edges away from hubs when a straight line would collide.
     let nearCount = 0;
@@ -804,6 +812,52 @@ function compactPositions(nodeIds, edges, positions) {
         pb.y += dy * push;
       }
     }
+  }
+}
+
+function resolveCollisions(nodeIds, edges, positions, hubRadius) {
+  const minEdgeGap = hubRadius * 1.1;
+  const maxIter = 18;
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    let moved = false;
+    for (let i = 0; i < nodeIds.length; i++) {
+      const a = nodeIds[i];
+      const pa = positions.get(a);
+      if (!pa) continue;
+      for (let j = i + 1; j < nodeIds.length; j++) {
+        const b = nodeIds[j];
+        const pb = positions.get(b);
+        if (!pb) continue;
+        const d = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+        if (d > hubRadius * 2.2) continue;
+
+        // Count edges that pass too close to other hubs.
+        let collisions = 0;
+        for (const e of edges) {
+          const from = positions.get(e.fromGroup);
+          const to = positions.get(e.toGroup);
+          if (!from || !to) continue;
+          if (from === pa && to === pb) continue;
+          if (from === pb && to === pa) continue;
+          const da = distancePointToSegment(pa.x, pa.y, from.x, from.y, to.x, to.y);
+          const db = distancePointToSegment(pb.x, pb.y, from.x, from.y, to.x, to.y);
+          if (da < minEdgeGap || db < minEdgeGap) collisions++;
+        }
+
+        if (collisions === 0) continue;
+        const angle = Math.atan2(pb.y - pa.y, pb.x - pa.x);
+        const nx = -Math.sin(angle);
+        const ny = Math.cos(angle);
+        const push = Math.min(220, 30 + collisions * 18);
+        pa.x -= nx * push;
+        pa.y -= ny * push;
+        pb.x += nx * push;
+        pb.y += ny * push;
+        moved = true;
+      }
+    }
+    if (!moved) break;
   }
 }
 
