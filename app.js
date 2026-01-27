@@ -159,13 +159,13 @@ function render() {
   const clusters = findClusters(groupIds, adjacency);
   const positions = layoutClusters(clusters, adjacency, groupConnections, 8000, 8000);
   compactPositions(groupIds, groupConnections, positions);
+  const hubs = groupIds.map((id) => positions.get(id)).filter(Boolean);
   const hubRadius = 75;
   const portRadius = 7.5;
   const outRadius = hubRadius + 26;
   const inRadius = state.decoupled ? hubRadius + 18 : hubRadius + 26;
   const outPorts = computePorts(groupConnections, positions, outRadius, "out", hubs, hubRadius);
   const inPorts = computePorts(groupConnections, positions, inRadius, "in", hubs, hubRadius);
-  const hubs = groupIds.map((id) => positions.get(id)).filter(Boolean);
 
   // Keep labels readable by avoiding hubs and other labels.
   const occupied = new Set();
