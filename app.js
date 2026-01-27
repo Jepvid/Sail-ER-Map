@@ -146,14 +146,18 @@ function render() {
   const adjacency = buildAdjacency(groupConnections);
   const clusters = findClusters(groupIds, adjacency);
   const positions = layoutClusters(clusters, adjacency, groupConnections, 1200, 800);
+  const hubRadius = 36;
+  const portRadius = 7;
+  const ports = computeEntrancePorts(groupConnections, positions, hubRadius + 6);
 
   groupConnections.forEach((c) => {
-    const from = positions.get(c.fromGroup);
-    const to = positions.get(c.toGroup);
-    if (!from || !to) return;
-
+    const fromHub = positions.get(c.fromGroup);
+    const toHub = positions.get(c.toGroup);
+    if (!fromHub || !toHub) return;
+    const from = ports.get(c.id) || fromHub;
+    const to = toHub;
     const midX = (from.x + to.x) / 2;
-    const midY = (from.y + to.y) / 2 - 40;
+    const midY = (from.y + to.y) / 2 - 28;
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("class", "edge");
@@ -162,7 +166,8 @@ function render() {
       `M ${from.x} ${from.y} Q ${midX} ${midY} ${to.x} ${to.y}`,
     );
 
-    if (state.decoupled) {
+    const oneWayGroup = c.fromGroupId === 0 || c.toGroupId === 0;
+    if (state.decoupled || oneWayGroup) {
       path.setAttribute("marker-end", "url(#arrow)");
     } else {
       path.setAttribute("marker-end", "url(#arrow)");
@@ -174,9 +179,9 @@ function render() {
     const labelText = formatGroupEdgeLabel(c);
     if (labelText) {
       const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      label.setAttribute("class", "node-label");
-      label.setAttribute("x", midX + 8);
-      label.setAttribute("y", midY - 6);
+      label.setAttribute("class", "port-label");
+      label.setAttribute("x", from.x + 10);
+      label.setAttribute("y", from.y - 10);
       label.textContent = labelText;
       nodesLayer.appendChild(label);
     }
@@ -186,20 +191,30 @@ function render() {
     const pos = positions.get(id);
     if (!pos) return;
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute("class", "node");
+    circle.setAttribute("class", "hub-node");
     circle.setAttribute("cx", pos.x);
     circle.setAttribute("cy", pos.y);
-    circle.setAttribute("r", 16);
+    circle.setAttribute("r", hubRadius);
 
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    label.setAttribute("class", "node-label");
-    label.setAttribute("x", pos.x + 20);
-    label.setAttribute("y", pos.y + 5);
+    label.setAttribute("class", "hub-label");
+    label.setAttribute("x", pos.x);
+    label.setAttribute("y", pos.y + 4);
     label.textContent = id;
 
     nodesLayer.appendChild(circle);
     nodesLayer.appendChild(label);
   });
+
+  // Draw entrance ports after hubs so they sit on top.
+  for (const port of ports.values()) {
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("class", "port-node");
+    circle.setAttribute("cx", port.x);
+    circle.setAttribute("cy", port.y);
+    circle.setAttribute("r", portRadius);
+    nodesLayer.appendChild(circle);
+  }
 }
 
 function hex(value) {
@@ -237,11 +252,11 @@ function buildEntranceNameMap(connections) {
 function buildEntranceGroupMap(connections) {
   const map = new Map();
   for (const c of connections) {
-    if (c.fromGroupName && !map.has(c.fromEntrance)) {
-      map.set(c.fromEntrance, c.fromGroupName);
+    if (!map.has(c.fromEntrance)) {
+      map.set(c.fromEntrance, getFromGroupKey(c));
     }
-    if (c.toGroupName && !map.has(c.toEntrance)) {
-      map.set(c.toEntrance, c.toGroupName);
+    if (!map.has(c.toEntrance)) {
+      map.set(c.toEntrance, getToGroupKey(c));
     }
   }
   return map;
@@ -258,8 +273,11 @@ function buildGroupConnections(connections, groupByEntrance) {
     if (seen.has(edgeKey)) continue;
     seen.add(edgeKey);
     edges.push({
+      id: edgeKey,
       fromGroup,
       toGroup,
+      fromGroupId: c.fromGroupId,
+      toGroupId: c.toGroupId,
       entrances: [
         {
           fromEntrance: c.fromEntrance,
@@ -273,12 +291,64 @@ function buildGroupConnections(connections, groupByEntrance) {
   return edges;
 }
 
+function getFromGroupKey(c) {
+  const oneWayGroup = c.fromGroupId === 0;
+  const name = c.fromName || "Unknown";
+  if (oneWayGroup) {
+    // Spawns/warps become their own hubs; owls stay grouped.
+    if (name.toLowerCase().includes("owl")) {
+      return c.fromGroupName || "Owls";
+    }
+    return name;
+  }
+  return c.fromGroupName || "Unknown";
+}
+
+function getToGroupKey(c) {
+  return c.toGroupName || "Unknown";
+}
+
 function formatGroupEdgeLabel(edge) {
   if (!edge.entrances || edge.entrances.length === 0) return "";
   const first = edge.entrances[0];
   const fromLabel = first.fromName || hex(first.fromEntrance);
   const extra = edge.entrances.length - 1;
   return extra > 0 ? `${fromLabel} (+${extra})` : fromLabel;
+}
+
+function computeEntrancePorts(edges, positions, radius) {
+  const ports = new Map();
+  const byGroup = new Map();
+  for (const e of edges) {
+    if (!byGroup.has(e.fromGroup)) byGroup.set(e.fromGroup, []);
+    byGroup.get(e.fromGroup).push(e);
+  }
+
+  for (const [group, list] of byGroup.entries()) {
+    const origin = positions.get(group);
+    if (!origin) continue;
+    const enriched = list
+      .map((e) => {
+        const target = positions.get(e.toGroup);
+        if (!target) return null;
+        const angle = Math.atan2(target.y - origin.y, target.x - origin.x);
+        return { edge: e, angle };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.angle - b.angle);
+
+    const count = enriched.length;
+    const spread = 0.22;
+    enriched.forEach((item, idx) => {
+      const offset = (idx - (count - 1) / 2) * spread;
+      const a = item.angle + offset;
+      const x = origin.x + Math.cos(a) * radius;
+      const y = origin.y + Math.sin(a) * radius;
+      ports.set(item.edge.id, { x, y });
+    });
+  }
+
+  return ports;
 }
 
 function findClusters(ids, adjacency) {

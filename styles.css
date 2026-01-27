@@ -304,15 +304,32 @@ button:hover:not(:disabled) {
   font-size: 14px;
 }
 
-.node {
+.hub-node {
   fill: var(--accent);
   stroke: #fff;
   stroke-width: 2px;
 }
 
-.node-label {
+.hub-label {
+  font-size: 13px;
+  font-weight: 700;
+  fill: #fff;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.25);
+  stroke-width: 3px;
+}
+
+.port-node {
+  fill: var(--ink);
+  stroke: #fff;
+  stroke-width: 1.5px;
+}
+
+.port-label {
   font-size: 12px;
   fill: var(--ink);
+  font-weight: 600;
 }
 
 .edge {
