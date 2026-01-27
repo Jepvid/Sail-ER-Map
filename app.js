@@ -5,7 +5,7 @@ const wsUrlInput = document.getElementById("wsUrl");
 const connectBtn = document.getElementById("connectBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
 const loadStateBtn = document.getElementById("loadStateBtn");
-const transitionList = document.getElementById("transitionList");
+const currentScenePill = document.getElementById("currentScenePill");
 const emptyState = document.getElementById("emptyState");
 
 const mapSvg = document.getElementById("mapSvg");
@@ -86,7 +86,7 @@ function loadState() {
       if (Array.isArray(data.transitions)) transitions = data.transitions;
       updateSeedStatus();
       render();
-      renderTransitions();
+      renderCurrentScene();
     })
     .catch(() => {});
 }
@@ -103,45 +103,27 @@ function handlePayload(payload) {
       return;
     case "current_scene":
       currentScene = payload;
-      renderTransitions();
+      renderCurrentScene();
       return;
     case "transition":
       transitions.push(payload);
-      renderTransitions();
       return;
     case "transition_history":
       transitions = payload.transitions || [];
-      renderTransitions();
       return;
     default:
       return;
   }
 }
 
-function renderTransitions() {
-  transitionList.innerHTML = "";
-  if (currentScene) {
-    const current = document.createElement("div");
-    current.className = "feed-item";
-    const currentLabel = currentScene.sceneName || hex(currentScene.sceneNum);
-    current.innerHTML = `
-      <strong>Current Scene</strong>
-      ${currentLabel} (spawn ${currentScene.spawn})
-    `;
-    transitionList.appendChild(current);
+function renderCurrentScene() {
+  if (!currentScene) {
+    currentScenePill.textContent = "Current: —";
+    return;
   }
-  const last = transitions.slice(-25).reverse();
-  for (const t of last) {
-    const item = document.createElement("div");
-    item.className = "feed-item";
-    const fromLabel = t.fromName || hex(t.fromScene);
-    const toLabel = t.toName || hex(t.toScene);
-    item.innerHTML = `
-      <strong>Exit ${hex(t.exit)}</strong>
-      ${fromLabel} → ${toLabel} (spawn ${t.spawn})
-    `;
-    transitionList.appendChild(item);
-  }
+  const label = currentScene.sceneName || hex(currentScene.sceneNum);
+  const spawn = currentScene.spawn ?? "?";
+  currentScenePill.textContent = `Current: ${label} (spawn ${spawn})`;
 }
 
 function render() {
@@ -432,3 +414,4 @@ window.addEventListener("mouseup", endPan);
 mapSvg.addEventListener("wheel", zoom, { passive: false });
 
 updateViewBox();
+renderCurrentScene();
