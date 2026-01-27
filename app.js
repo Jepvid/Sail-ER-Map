@@ -116,6 +116,8 @@ function handlePayload(payload) {
     case "current_scene":
       currentScene = payload;
       renderCurrentScene();
+      // Scene changes are a good signal that the entrance map may have updated.
+      loadState();
       return;
     case "transition":
       transitions.push(payload);
@@ -155,6 +157,7 @@ function render() {
   const groupIds = Array.from(
     new Set(groupConnections.flatMap((c) => [c.fromGroup, c.toGroup])),
   );
+  const currentGroupId = resolveCurrentGroupId(currentScene, connections, groupByEntrance);
   const adjacency = buildAdjacency(groupConnections);
   const clusters = findClusters(groupIds, adjacency);
   const positions = layoutClusters(clusters, adjacency, groupConnections, 8000, 8000);
@@ -262,7 +265,10 @@ function render() {
     const pos = positions.get(id);
     if (!pos) return;
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    circle.setAttribute("class", "hub-node");
+    circle.setAttribute(
+      "class",
+      id === currentGroupId ? "hub-node hub-node-current" : "hub-node",
+    );
     circle.setAttribute("cx", pos.x);
     circle.setAttribute("cy", pos.y);
     circle.setAttribute("r", hubRadius);
@@ -311,6 +317,9 @@ function render() {
     const destX = to.x - ux * 10;
     const destY = to.y - uy * 10;
     const angle = Math.atan2(dy, dx);
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const fromLabelBase = { x: lerp(from.x, to.x, 0.38), y: lerp(from.y, to.y, 0.38) };
+    const toLabelBase = { x: lerp(from.x, to.x, 0.68), y: lerp(from.y, to.y, 0.68) };
 
     // Curve edges away from hubs when a straight line would collide.
     let nearCount = 0;
@@ -345,12 +354,12 @@ function render() {
 
     const labelText = formatGroupEdgeLabel(c);
     if (labelText) {
-      placeLabel(from.x, from.y, labelText, "port-label", angle);
+      placeLabel(fromLabelBase.x, fromLabelBase.y, labelText, "port-label", angle);
     }
 
     const destLabelText = formatDestinationLabel(c);
     if (destLabelText) {
-      placeLabel(destX, destY, destLabelText, "dest-label", angle + Math.PI);
+      placeLabel(toLabelBase.x, toLabelBase.y, destLabelText, "dest-label", angle + Math.PI);
     }
   });
 
@@ -441,6 +450,28 @@ function buildGroupConnections(connections, groupByEntrance) {
   return edges;
 }
 
+function resolveCurrentGroupId(currentScenePacket, connections, groupByEntrance) {
+  if (!currentScenePacket || !currentScenePacket.sceneName) return null;
+  const name = currentScenePacket.sceneName;
+  // If the scene name already matches a group hub, use it directly.
+  if (name && typeof name === "string") {
+    for (const c of connections) {
+      if (c.fromGroupName === name) return c.fromGroupName;
+      if (c.toGroupName === name) return c.toGroupName;
+    }
+  }
+  // Otherwise, try to resolve via an entrance name.
+  for (const c of connections) {
+    if (c.fromName === name) {
+      return groupByEntrance.get(c.fromEntrance) || c.fromGroupName || null;
+    }
+    if (c.toName === name) {
+      return groupByEntrance.get(c.toEntrance) || c.toGroupName || null;
+    }
+  }
+  return null;
+}
+
 function getFromGroupKey(c) {
   const oneWayGroup = c.fromGroupId === 0;
   const name = c.fromName || "Unknown";
@@ -523,14 +554,21 @@ function computePorts(edges, positions, radius, mode, hubs, hubRadius) {
     const avgX = entries.reduce((sum, it) => sum + Math.cos(it.angle), 0) / count;
     const avgY = entries.reduce((sum, it) => sum + Math.sin(it.angle), 0) / count;
     const rotation = Math.atan2(avgY, avgX);
-    const step = (Math.PI * 2) / count;
-    const rotSamples = Math.min(12, Math.max(6, count * 2));
+    // Dynamic minimum separation: allow tighter spacing for dense hubs,
+    // but never let anchors overlap.
+    const minSep = Math.max(Math.PI / 18, Math.min(Math.PI / 4, (Math.PI * 1.35) / count));
+    const minSpan = minSep * Math.max(1, count - 1);
+    const maxSpan = Math.PI * 1.5;
+    const span = Math.min(Math.PI * 2, Math.max(minSpan, Math.min(maxSpan, Math.PI * 1.2)));
+    const step = count > 1 ? span / (count - 1) : 0;
+    const baseStart = rotation - span / 2;
+    const rotSamples = Math.min(10, Math.max(4, count));
 
     let bestPorts = null;
     let bestScore = Infinity;
 
     for (let s = 0; s < rotSamples; s++) {
-      const rot = rotation + (s / rotSamples) * step;
+      const rot = baseStart + (s / rotSamples) * Math.max(step, span / Math.max(rotSamples, 1));
       const candidate = new Map();
       let score = 0;
 
@@ -657,13 +695,15 @@ function compactPositions(nodeIds, edges, positions) {
     neighbors.get(e.toGroup)?.add(e.fromGroup);
   }
 
-  const attraction = 0.03;
-  const repulsion = 90000;
-  const damping = 0.8;
-  const ideal = 460;
-  const baryPull = 0.06;
+  // Keep this step lightweight; it runs often.
+  const attraction = 0.022;
+  const repulsion = 65000;
+  const damping = 0.82;
+  const ideal = 420;
+  const baryPull = 0.045;
+  const minDist = 300;
 
-  for (let iter = 0; iter < 140; iter++) {
+  for (let iter = 0; iter < 60; iter++) {
     // Repulsion between all hubs.
     for (let i = 0; i < nodeIds.length; i++) {
       const a = nodeIds[i];
@@ -745,6 +785,29 @@ function compactPositions(nodeIds, edges, positions) {
       v.y *= damping;
       p.x += v.x;
       p.y += v.y;
+    }
+
+    // Enforce a hard minimum spacing between hubs.
+    for (let i = 0; i < nodeIds.length; i++) {
+      const a = nodeIds[i];
+      const pa = positions.get(a);
+      if (!pa) continue;
+      for (let j = i + 1; j < nodeIds.length; j++) {
+        const b = nodeIds[j];
+        const pb = positions.get(b);
+        if (!pb) continue;
+        let dx = pb.x - pa.x;
+        let dy = pb.y - pa.y;
+        let d = Math.hypot(dx, dy) || 1;
+        if (d >= minDist) continue;
+        dx /= d;
+        dy /= d;
+        const push = (minDist - d) * 0.5;
+        pa.x -= dx * push;
+        pa.y -= dy * push;
+        pb.x += dx * push;
+        pb.y += dy * push;
+      }
     }
   }
 }

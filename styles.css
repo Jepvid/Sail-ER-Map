@@ -318,6 +318,12 @@ button:hover:not(:disabled) {
   stroke-width: 2px;
 }
 
+.hub-node-current {
+  fill: #1f9d55;
+  stroke: #e7ffe7;
+  stroke-width: 3px;
+}
+
 .hub-label {
   font-size: 13px;
   font-weight: 700;
