@@ -159,12 +159,13 @@ function render() {
   const clusters = findClusters(groupIds, adjacency);
   const positions = layoutClusters(clusters, adjacency, groupConnections, 8000, 8000);
   compactPositions(groupIds, groupConnections, positions);
-  const hubRadius = 100;
+  const hubRadius = 75;
   const portRadius = 7.5;
   const outRadius = hubRadius + 26;
   const inRadius = state.decoupled ? hubRadius + 18 : hubRadius + 26;
   const outPorts = computePorts(groupConnections, positions, outRadius, "out");
   const inPorts = computePorts(groupConnections, positions, inRadius, "in");
+  const hubs = groupIds.map((id) => positions.get(id)).filter(Boolean);
 
   // Keep labels readable by avoiding hubs and other labels.
   const occupied = new Set();
@@ -203,13 +204,30 @@ function render() {
     const ny = ux;
     const approxW = Math.min(420, text.length * 7 + 18);
     const approxH = 18;
+    const farFromHubs = (x, y) => {
+      const minDist = hubRadius + 70;
+      for (const h of hubs) {
+        const dx = x - h.x;
+        const dy = y - h.y;
+        if (Math.hypot(dx, dy) < minDist) return false;
+      }
+      return true;
+    };
     const offsets = [1, -1, 2, -2, 3, -3, 4, -4];
     for (const k of offsets) {
       const ox = nx * (k * 26) + ux * 12;
       const oy = ny * (k * 26) + uy * 12;
       const x = baseX + ox;
       const y = baseY + oy;
+      if (!farFromHubs(x, y)) continue;
       if (!isFree(x, y, Math.max(approxW * 0.35, approxH * 2))) continue;
+      const leader = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      leader.setAttribute("class", "label-leader");
+      leader.setAttribute("x1", baseX);
+      leader.setAttribute("y1", baseY);
+      leader.setAttribute("x2", x - nx * 6);
+      leader.setAttribute("y2", y - ny * 6);
+      nodesLayer.appendChild(leader);
       const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
       label.setAttribute("class", cls);
       label.setAttribute("x", x);
@@ -220,10 +238,19 @@ function render() {
       return;
     }
     // Fallback: place it even if crowded.
+    const fx = baseX + nx * 24 + ux * 10;
+    const fy = baseY + ny * 24 + uy * 10;
+    const leader = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    leader.setAttribute("class", "label-leader");
+    leader.setAttribute("x1", baseX);
+    leader.setAttribute("y1", baseY);
+    leader.setAttribute("x2", fx - nx * 6);
+    leader.setAttribute("y2", fy - ny * 6);
+    nodesLayer.appendChild(leader);
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
     label.setAttribute("class", cls);
-    label.setAttribute("x", baseX + nx * 24 + ux * 10);
-    label.setAttribute("y", baseY + ny * 24 + uy * 10);
+    label.setAttribute("x", fx);
+    label.setAttribute("y", fy);
     label.textContent = text;
     nodesLayer.appendChild(label);
   };
@@ -454,10 +481,17 @@ function computePorts(edges, positions, radius, mode) {
       .sort((a, b) => a.angle - b.angle);
 
     const count = enriched.length;
-    const spread = 0.34;
+    if (count === 0) continue;
+
+    // Evenly distribute anchors around the hub, but rotate them toward
+    // the average direction of their targets.
+    const avgX = enriched.reduce((sum, it) => sum + Math.cos(it.angle), 0) / count;
+    const avgY = enriched.reduce((sum, it) => sum + Math.sin(it.angle), 0) / count;
+    const rotation = Math.atan2(avgY, avgX);
+    const step = (Math.PI * 2) / count;
+
     enriched.forEach((item, idx) => {
-      const offset = (idx - (count - 1) / 2) * spread;
-      const a = item.angle + offset;
+      const a = rotation + step * idx;
       const x = origin.x + Math.cos(a) * radius;
       const y = origin.y + Math.sin(a) * radius;
       ports.set(item.edge.id, { x, y });

@@ -346,6 +346,12 @@ button:hover:not(:disabled) {
   font-weight: 600;
 }
 
+.label-leader {
+  stroke: rgba(20, 17, 15, 0.45);
+  stroke-width: 1.5px;
+  fill: none;
+}
+
 .edge {
   stroke: var(--ink);
   stroke-width: 2px;

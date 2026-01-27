@@ -46,7 +46,7 @@ The page connects over WebSocket and then renders the current known state.
 If the seed uses decoupled entrances, edges are drawn with **one-way arrows**.
 If not, they are rendered **two-way**.
 
-The "Spawns/Warp Songs/Owls" group is always treated as one-way.
+Spawns, Warp Songs and Owls are always treated as one-way.
 
 ## Notes
 
