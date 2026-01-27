@@ -163,13 +163,13 @@ function render() {
   const portRadius = 7.5;
   const outRadius = hubRadius + 26;
   const inRadius = state.decoupled ? hubRadius + 18 : hubRadius + 26;
-  const outPorts = computePorts(groupConnections, positions, outRadius, "out");
-  const inPorts = computePorts(groupConnections, positions, inRadius, "in");
+  const outPorts = computePorts(groupConnections, positions, outRadius, "out", hubs, hubRadius);
+  const inPorts = computePorts(groupConnections, positions, inRadius, "in", hubs, hubRadius);
   const hubs = groupIds.map((id) => positions.get(id)).filter(Boolean);
 
   // Keep labels readable by avoiding hubs and other labels.
   const occupied = new Set();
-  const occCell = 120;
+  const occCell = 80;
   const occKey = (x, y) => `${Math.round(x / occCell)}:${Math.round(y / occCell)}`;
   const markOccupied = (x, y, pad = 0) => {
     const r = Math.max(20, pad);
@@ -204,6 +204,7 @@ function render() {
     const ny = ux;
     const approxW = Math.min(420, text.length * 7 + 18);
     const approxH = 18;
+    const pad = Math.max(44, approxW * 0.6);
     const farFromHubs = (x, y) => {
       const minDist = hubRadius + 70;
       for (const h of hubs) {
@@ -213,14 +214,14 @@ function render() {
       }
       return true;
     };
-    const offsets = [1, -1, 2, -2, 3, -3, 4, -4];
+    const offsets = [1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6];
     for (const k of offsets) {
-      const ox = nx * (k * 26) + ux * 12;
-      const oy = ny * (k * 26) + uy * 12;
+      const ox = nx * (k * 30) + ux * 16;
+      const oy = ny * (k * 30) + uy * 16;
       const x = baseX + ox;
       const y = baseY + oy;
       if (!farFromHubs(x, y)) continue;
-      if (!isFree(x, y, Math.max(approxW * 0.35, approxH * 2))) continue;
+      if (!isFree(x, y, pad)) continue;
       const leader = document.createElementNS("http://www.w3.org/2000/svg", "line");
       leader.setAttribute("class", "label-leader");
       leader.setAttribute("x1", baseX);
@@ -234,7 +235,7 @@ function render() {
       label.setAttribute("y", y);
       label.textContent = text;
       nodesLayer.appendChild(label);
-      markOccupied(x, y, Math.max(approxW * 0.4, approxH * 2.2));
+      markOccupied(x, y, pad);
       return;
     }
     // Fallback: place it even if crowded.
@@ -253,6 +254,7 @@ function render() {
     label.setAttribute("y", fy);
     label.textContent = text;
     nodesLayer.appendChild(label);
+    markOccupied(fx, fy, pad);
   };
 
   // Draw hubs first so labels/ports appear above them.
@@ -304,15 +306,31 @@ function render() {
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len;
     const uy = dy / len;
+    const nx = -uy;
+    const ny = ux;
     const destX = to.x - ux * 10;
     const destY = to.y - uy * 10;
     const angle = Math.atan2(dy, dx);
+
+    // Curve edges away from hubs when a straight line would collide.
+    let nearCount = 0;
+    const collideThresh = hubRadius * 1.1;
+    for (const h of hubs) {
+      if (!h || h === fromHub || h === toHub) continue;
+      const d = distancePointToSegment(h.x, h.y, from.x, from.y, to.x, to.y);
+      if (d < collideThresh) nearCount++;
+    }
+    const edgeHash = Math.abs(hashString(c.id));
+    const bendDir = edgeHash % 2 === 0 ? 1 : -1;
+    const bendMag = 60 + nearCount * 90;
+    const ctrlX = midX + nx * bendMag * bendDir;
+    const ctrlY = midY + ny * bendMag * bendDir;
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("class", "edge");
     path.setAttribute(
       "d",
-      `M ${from.x} ${from.y} Q ${midX} ${midY} ${to.x} ${to.y}`,
+      `M ${from.x} ${from.y} Q ${ctrlX} ${ctrlY} ${to.x} ${to.y}`,
     );
 
     const oneWayGroup = c.fromGroupId === 0 || c.toGroupId === 0;
@@ -405,6 +423,8 @@ function buildGroupConnections(connections, groupByEntrance) {
       id: edgeKey,
       fromGroup,
       toGroup,
+      fromEntrance: c.fromEntrance,
+      toEntrance: c.toEntrance,
       fromGroupId: c.fromGroupId,
       toGroupId: c.toGroupId,
       entrances: [
@@ -456,7 +476,7 @@ function formatDestinationLabel(edge) {
   return `${toLabel} (spawn ${first.spawn})`;
 }
 
-function computePorts(edges, positions, radius, mode) {
+function computePorts(edges, positions, radius, mode, hubs, hubRadius) {
   const ports = new Map();
   const byGroup = new Map();
 
@@ -469,36 +489,115 @@ function computePorts(edges, positions, radius, mode) {
   for (const [group, list] of byGroup.entries()) {
     const origin = positions.get(group);
     if (!origin) continue;
-    const enriched = list
-      .map((e) => {
-        const otherKey = mode === "in" ? e.fromGroup : e.toGroup;
-        const other = positions.get(otherKey);
-        if (!other) return null;
-        const angle = Math.atan2(other.y - origin.y, other.x - origin.x);
-        return { edge: e, angle };
+    // Build one anchor per entrance entry on this hub.
+    const entryMap = new Map();
+    for (const e of list) {
+      const keyBase = mode === "in" ? e.toEntrance : e.fromEntrance;
+      const key = state.decoupled ? `${keyBase}` : `${keyBase}:${mode}`;
+      if (!entryMap.has(key)) {
+        entryMap.set(key, { edges: [], others: [] });
+      }
+      entryMap.get(key).edges.push(e);
+      const otherKey = mode === "in" ? e.fromGroup : e.toGroup;
+      const other = positions.get(otherKey);
+      if (other) entryMap.get(key).others.push(other);
+    }
+
+    const entries = Array.from(entryMap.entries())
+      .map(([key, info]) => {
+        if (info.others.length === 0) return null;
+        const avg = info.others.reduce(
+          (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
+          { x: 0, y: 0 },
+        );
+        const otherAvg = { x: avg.x / info.others.length, y: avg.y / info.others.length };
+        const angle = Math.atan2(otherAvg.y - origin.y, otherAvg.x - origin.x);
+        return { key, edges: info.edges, other: otherAvg, angle };
       })
       .filter(Boolean)
       .sort((a, b) => a.angle - b.angle);
 
-    const count = enriched.length;
+    const count = entries.length;
     if (count === 0) continue;
 
-    // Evenly distribute anchors around the hub, but rotate them toward
-    // the average direction of their targets.
-    const avgX = enriched.reduce((sum, it) => sum + Math.cos(it.angle), 0) / count;
-    const avgY = enriched.reduce((sum, it) => sum + Math.sin(it.angle), 0) / count;
+    const avgX = entries.reduce((sum, it) => sum + Math.cos(it.angle), 0) / count;
+    const avgY = entries.reduce((sum, it) => sum + Math.sin(it.angle), 0) / count;
     const rotation = Math.atan2(avgY, avgX);
     const step = (Math.PI * 2) / count;
+    const rotSamples = Math.min(12, Math.max(6, count * 2));
 
-    enriched.forEach((item, idx) => {
-      const a = rotation + step * idx;
-      const x = origin.x + Math.cos(a) * radius;
-      const y = origin.y + Math.sin(a) * radius;
-      ports.set(item.edge.id, { x, y });
-    });
+    let bestPorts = null;
+    let bestScore = Infinity;
+
+    for (let s = 0; s < rotSamples; s++) {
+      const rot = rotation + (s / rotSamples) * step;
+      const candidate = new Map();
+      let score = 0;
+
+      entries.forEach((item, idx) => {
+        const a = rot + step * idx;
+        const x = origin.x + Math.cos(a) * radius;
+        const y = origin.y + Math.sin(a) * radius;
+        candidate.set(item.key, { x, y, other: item.other });
+      });
+
+      for (const entry of candidate.values()) {
+        const other = entry.other;
+        const len = Math.hypot(other.x - entry.x, other.y - entry.y);
+        score += len;
+
+        const thresh = hubRadius * 1.05;
+        const hubPenalty = 80000;
+        for (const h of hubs) {
+          if (!h || h === origin) continue;
+          const d = distancePointToSegment(h.x, h.y, entry.x, entry.y, other.x, other.y);
+          if (d < thresh) {
+            score += hubPenalty * (1 - d / thresh);
+          }
+        }
+      }
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestPorts = candidate;
+      }
+    }
+
+    if (bestPorts) {
+      for (const entry of entries) {
+        const p = bestPorts.get(entry.key);
+        if (!p) continue;
+        for (const e of entry.edges) {
+          ports.set(e.id, { x: p.x, y: p.y });
+        }
+      }
+    }
   }
 
   return ports;
+}
+
+function distancePointToSegment(px, py, ax, ay, bx, by) {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const apx = px - ax;
+  const apy = py - ay;
+  const ab2 = abx * abx + aby * aby;
+  if (ab2 <= 1e-6) return Math.hypot(px - ax, py - ay);
+  let t = (apx * abx + apy * aby) / ab2;
+  t = Math.max(0, Math.min(1, t));
+  const cx = ax + abx * t;
+  const cy = ay + aby * t;
+  return Math.hypot(px - cx, py - cy);
+}
+
+function hashString(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (h << 5) - h + str.charCodeAt(i);
+    h |= 0;
+  }
+  return h;
 }
 
 function findClusters(ids, adjacency) {
@@ -547,14 +646,22 @@ function layoutClusters(clusters, adjacency, edges, width, height) {
 
 function compactPositions(nodeIds, edges, positions) {
   const vel = new Map();
+  const neighbors = new Map();
   for (const id of nodeIds) {
     vel.set(id, { x: 0, y: 0 });
+    neighbors.set(id, new Set());
   }
 
-  const attraction = 0.015;
-  const repulsion = 120000;
-  const damping = 0.82;
-  const ideal = 520;
+  for (const e of edges) {
+    neighbors.get(e.fromGroup)?.add(e.toGroup);
+    neighbors.get(e.toGroup)?.add(e.fromGroup);
+  }
+
+  const attraction = 0.03;
+  const repulsion = 90000;
+  const damping = 0.8;
+  const ideal = 460;
+  const baryPull = 0.06;
 
   for (let iter = 0; iter < 140; iter++) {
     // Repulsion between all hubs.
@@ -603,6 +710,30 @@ function compactPositions(nodeIds, edges, positions) {
       va.y += dy * force;
       vb.x -= dx * force;
       vb.y -= dy * force;
+    }
+
+    // Pull hubs toward the barycenter of their neighbors to reduce
+    // roundabout lines when the graph grows.
+    for (const id of nodeIds) {
+      const p = positions.get(id);
+      const ns = Array.from(neighbors.get(id) || []);
+      if (!p || ns.length === 0) continue;
+      let sx = 0;
+      let sy = 0;
+      let count = 0;
+      for (const n of ns) {
+        const pn = positions.get(n);
+        if (!pn) continue;
+        sx += pn.x;
+        sy += pn.y;
+        count++;
+      }
+      if (count === 0) continue;
+      const bx = sx / count;
+      const by = sy / count;
+      const v = vel.get(id);
+      v.x += (bx - p.x) * baryPull;
+      v.y += (by - p.y) * baryPull;
     }
 
     // Integrate velocity.
