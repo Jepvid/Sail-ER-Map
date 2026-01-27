@@ -20,7 +20,7 @@ let currentScene = null;
 
 const state = {
   decoupled: false,
-  viewBox: { x: 0, y: 0, w: 1200, h: 800 },
+  viewBox: { x: 0, y: 0, w: 8000, h: 8000 },
   isPanning: false,
   panStart: { x: 0, y: 0, vx: 0, vy: 0 },
 };
@@ -145,17 +145,21 @@ function render() {
   );
   const adjacency = buildAdjacency(groupConnections);
   const clusters = findClusters(groupIds, adjacency);
-  const positions = layoutClusters(clusters, adjacency, groupConnections, 1200, 800);
-  const hubRadius = 36;
-  const portRadius = 7;
-  const ports = computeEntrancePorts(groupConnections, positions, hubRadius + 6);
+  const positions = layoutClusters(clusters, adjacency, groupConnections, 8000, 8000);
+  const hubRadius = 100;
+  const portRadius = 7.5;
+  const sharedRadius = hubRadius + 24;
+  const outPorts = computePorts(groupConnections, positions, sharedRadius, "out");
+  const inPorts = state.decoupled
+    ? computePorts(groupConnections, positions, hubRadius + 18, "in")
+    : outPorts;
 
   groupConnections.forEach((c) => {
     const fromHub = positions.get(c.fromGroup);
     const toHub = positions.get(c.toGroup);
     if (!fromHub || !toHub) return;
-    const from = ports.get(c.id) || fromHub;
-    const to = toHub;
+    const from = outPorts.get(c.id) || fromHub;
+    const to = inPorts.get(c.id) || toHub;
     const midX = (from.x + to.x) / 2;
     const midY = (from.y + to.y) / 2 - 28;
     const dx = to.x - from.x;
@@ -163,8 +167,8 @@ function render() {
     const len = Math.hypot(dx, dy) || 1;
     const ux = dx / len;
     const uy = dy / len;
-    const destX = toHub.x - ux * (hubRadius + 14);
-    const destY = toHub.y - uy * (hubRadius + 14);
+    const destX = to.x - ux * 10;
+    const destY = to.y - uy * 10;
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("class", "edge");
@@ -223,8 +227,12 @@ function render() {
     nodesLayer.appendChild(label);
   });
 
-  // Draw entrance ports after hubs so they sit on top.
-  for (const port of ports.values()) {
+  // Draw ports after hubs so they sit on top.
+  const drawn = new Set();
+  for (const port of [...outPorts.values(), ...inPorts.values()]) {
+    const key = `${port.x.toFixed(2)}:${port.y.toFixed(2)}`;
+    if (drawn.has(key)) continue;
+    drawn.add(key);
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("class", "port-node");
     circle.setAttribute("cx", port.x);
@@ -344,12 +352,14 @@ function formatDestinationLabel(edge) {
   return `${toLabel} (spawn ${first.spawn})`;
 }
 
-function computeEntrancePorts(edges, positions, radius) {
+function computePorts(edges, positions, radius, mode) {
   const ports = new Map();
   const byGroup = new Map();
+
   for (const e of edges) {
-    if (!byGroup.has(e.fromGroup)) byGroup.set(e.fromGroup, []);
-    byGroup.get(e.fromGroup).push(e);
+    const key = mode === "in" ? e.toGroup : e.fromGroup;
+    if (!byGroup.has(key)) byGroup.set(key, []);
+    byGroup.get(key).push(e);
   }
 
   for (const [group, list] of byGroup.entries()) {
@@ -357,16 +367,17 @@ function computeEntrancePorts(edges, positions, radius) {
     if (!origin) continue;
     const enriched = list
       .map((e) => {
-        const target = positions.get(e.toGroup);
-        if (!target) return null;
-        const angle = Math.atan2(target.y - origin.y, target.x - origin.x);
+        const otherKey = mode === "in" ? e.fromGroup : e.toGroup;
+        const other = positions.get(otherKey);
+        if (!other) return null;
+        const angle = Math.atan2(other.y - origin.y, other.x - origin.x);
         return { edge: e, angle };
       })
       .filter(Boolean)
       .sort((a, b) => a.angle - b.angle);
 
     const count = enriched.length;
-    const spread = 0.22;
+    const spread = 0.34;
     enriched.forEach((item, idx) => {
       const offset = (idx - (count - 1) / 2) * spread;
       const a = item.angle + offset;
@@ -405,7 +416,7 @@ function findClusters(ids, adjacency) {
 
 function layoutClusters(clusters, adjacency, edges, width, height) {
   const positions = new Map();
-  const padding = 80;
+  const padding = 140;
   const gridCols = Math.ceil(Math.sqrt(clusters.length));
   const cellW = (width - padding * 2) / Math.max(gridCols, 1);
   const cellH = (height - padding * 2) / Math.max(gridCols, 1);
@@ -417,7 +428,7 @@ function layoutClusters(clusters, adjacency, edges, width, height) {
     const cy = padding + row * cellH + cellH / 2;
     const nodeSet = new Set(cluster);
     const clusterEdges = edges.filter((e) => nodeSet.has(e.fromGroup) && nodeSet.has(e.toGroup));
-    layoutDirectedCluster(cluster, clusterEdges, cx, cy, cellW * 0.82, cellH * 0.82, positions);
+    layoutDirectedCluster(cluster, clusterEdges, cx, cy, cellW * 0.92, cellH * 0.92, positions);
   });
 
   return positions;
@@ -619,7 +630,7 @@ function zoom(event) {
 }
 
 document.getElementById("resetBtn").addEventListener("click", () => {
-  state.viewBox = { x: 0, y: 0, w: 1200, h: 800 };
+  state.viewBox = { x: 0, y: 0, w: 8000, h: 8000 };
   updateViewBox();
 });
 

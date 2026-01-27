@@ -108,6 +108,8 @@ body {
   grid-template-rows: auto 1fr;
   gap: 20px;
   padding: 12px 40px 40px;
+  min-height: calc(100vh - 120px);
+  align-items: stretch;
 }
 
 .panel {
@@ -133,7 +135,7 @@ body {
   grid-row: 1 / span 2;
   display: flex;
   flex-direction: column;
-  min-height: 600px;
+  min-height: 0;
 }
 
 h2 {
@@ -278,6 +280,7 @@ button:hover:not(:disabled) {
 .map-shell {
   position: relative;
   flex: 1;
+  min-height: 0;
   background: #f8f3ea;
   border-radius: 16px;
   border: 1px dashed #dbcdbf;
