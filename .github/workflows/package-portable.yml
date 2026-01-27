@@ -3,7 +3,7 @@ name: Package Desktop App
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: ["**"]
     paths:
       - ".github/workflows/package-portable.yml"
       - "package.json"
