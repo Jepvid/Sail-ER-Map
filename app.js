@@ -21,9 +21,10 @@ let pollTimer = null;
 
 const state = {
   decoupled: false,
-  viewBox: { x: 0, y: 0, w: 8000, h: 8000 },
+  viewBox: { x: 0, y: 0, w: 1000, h: 1000 },
   isPanning: false,
   panStart: { x: 0, y: 0, vx: 0, vy: 0 },
+  lastCanvas: { w: 1000, h: 1000 },
 };
 
 function setStatus(text, cls = "pill") {
@@ -160,7 +161,8 @@ function render() {
   const currentGroupId = resolveCurrentGroupId(currentScene, connections, groupByEntrance);
   const adjacency = buildAdjacency(groupConnections);
   const clusters = findClusters(groupIds, adjacency);
-  const positions = layoutClusters(clusters, adjacency, groupConnections, 8000, 8000);
+  const canvasSize = getCanvasSize(groupIds.length, groupConnections.length);
+  const positions = layoutClusters(clusters, adjacency, groupConnections, canvasSize.w, canvasSize.h);
   compactPositions(groupIds, groupConnections, positions);
   const hubRadius = 75;
   resolveCollisions(groupIds, groupConnections, positions, hubRadius);
@@ -170,6 +172,7 @@ function render() {
   const inRadius = state.decoupled ? hubRadius + 18 : hubRadius + 26;
   const outPorts = computePorts(groupConnections, positions, outRadius, "out", hubs, hubRadius);
   const inPorts = computePorts(groupConnections, positions, inRadius, "in", hubs, hubRadius);
+  ensureCanvasSize(canvasSize);
 
   // Keep labels readable by avoiding hubs and other labels.
   const occupied = new Set();
@@ -304,15 +307,23 @@ function render() {
     const destX = to.x - ux * 10;
     const destY = to.y - uy * 10;
     const angle = Math.atan2(dy, dx);
-    const lerp = (a, b, t) => a + (b - a) * t;
-    const labelOffset = 120;
+    const labelOffset = hubRadius + 90;
+    const fromDirX = from.x - fromHub.x;
+    const fromDirY = from.y - fromHub.y;
+    const fromDirLen = Math.hypot(fromDirX, fromDirY) || 1;
+    const toDirX = to.x - toHub.x;
+    const toDirY = to.y - toHub.y;
+    const toDirLen = Math.hypot(toDirX, toDirY) || 1;
+    const fromAngle = Math.atan2(fromDirY, fromDirX);
+    const toAngle = Math.atan2(toDirY, toDirX);
+
     const fromLabelBase = {
-      x: from.x + ux * labelOffset,
-      y: from.y + uy * labelOffset,
+      x: fromHub.x + (fromDirX / fromDirLen) * labelOffset,
+      y: fromHub.y + (fromDirY / fromDirLen) * labelOffset,
     };
     const toLabelBase = {
-      x: to.y - ux * labelOffset,
-      y: to.y - uy * labelOffset,
+      x: toHub.x + (toDirX / toDirLen) * labelOffset,
+      y: toHub.y + (toDirY / toDirLen) * labelOffset,
     };
 
     // Curve edges away from hubs when a straight line would collide.
@@ -348,12 +359,12 @@ function render() {
 
     const labelText = formatGroupEdgeLabel(c);
     if (labelText) {
-      placeLabel(fromLabelBase.x, fromLabelBase.y, labelText, "port-label", angle);
+      placeLabel(fromLabelBase.x, fromLabelBase.y, labelText, "port-label", fromAngle);
     }
 
     const destLabelText = formatDestinationLabel(c);
     if (destLabelText) {
-      placeLabel(toLabelBase.x, toLabelBase.y, destLabelText, "dest-label", angle + Math.PI);
+      placeLabel(toLabelBase.x, toLabelBase.y, destLabelText, "dest-label", toAngle);
     }
   });
 
@@ -376,6 +387,27 @@ function buildAdjacency(connections) {
     adjacency.get(to).add(from);
   }
   return adjacency;
+}
+
+function getCanvasSize(nodeCount, edgeCount) {
+  const base = 2400;
+  const density = Math.max(1, Math.sqrt(nodeCount));
+  const edgeBoost = Math.min(3200, edgeCount * 6);
+  const size = Math.min(12000, Math.round(base + density * 900 + edgeBoost));
+  return { w: size, h: size };
+}
+
+function ensureCanvasSize(target) {
+  if (target.w > state.viewBox.w || target.h > state.viewBox.h) {
+    state.viewBox = {
+      x: state.viewBox.x,
+      y: state.viewBox.y,
+      w: Math.max(state.viewBox.w, target.w),
+      h: Math.max(state.viewBox.h, target.h),
+    };
+    updateViewBox();
+  }
+  state.lastCanvas = target;
 }
 
 function buildEntranceNameMap(connections) {
@@ -1057,7 +1089,7 @@ function zoom(event) {
 }
 
 document.getElementById("resetBtn").addEventListener("click", () => {
-  state.viewBox = { x: 0, y: 0, w: 8000, h: 8000 };
+  state.viewBox = { x: 0, y: 0, w: state.lastCanvas.w, h: state.lastCanvas.h };
   updateViewBox();
 });
 
