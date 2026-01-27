@@ -158,6 +158,13 @@ function render() {
     const to = toHub;
     const midX = (from.x + to.x) / 2;
     const midY = (from.y + to.y) / 2 - 28;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    const destX = toHub.x - ux * (hubRadius + 14);
+    const destY = toHub.y - uy * (hubRadius + 14);
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("class", "edge");
@@ -183,6 +190,16 @@ function render() {
       label.setAttribute("x", from.x + 10);
       label.setAttribute("y", from.y - 10);
       label.textContent = labelText;
+      nodesLayer.appendChild(label);
+    }
+
+    const destLabelText = formatDestinationLabel(c);
+    if (destLabelText) {
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("class", "dest-label");
+      label.setAttribute("x", destX + 8);
+      label.setAttribute("y", destY - 6);
+      label.textContent = destLabelText;
       nodesLayer.appendChild(label);
     }
   });
@@ -284,6 +301,7 @@ function buildGroupConnections(connections, groupByEntrance) {
           toEntrance: c.toEntrance,
           fromName: c.fromName,
           toName: c.toName,
+          spawn: c.spawn,
         },
       ],
     });
@@ -314,6 +332,16 @@ function formatGroupEdgeLabel(edge) {
   const fromLabel = first.fromName || hex(first.fromEntrance);
   const extra = edge.entrances.length - 1;
   return extra > 0 ? `${fromLabel} (+${extra})` : fromLabel;
+}
+
+function formatDestinationLabel(edge) {
+  if (!edge.entrances || edge.entrances.length === 0) return "";
+  const first = edge.entrances[0];
+  const toLabel = first.toName || hex(first.toEntrance);
+  if (first.spawn === undefined || first.spawn === null || first.spawn < 0) {
+    return toLabel;
+  }
+  return `${toLabel} (spawn ${first.spawn})`;
 }
 
 function computeEntrancePorts(edges, positions, radius) {
