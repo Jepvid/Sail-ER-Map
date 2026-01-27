@@ -38,9 +38,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run dist
 
-      - name: Upload artifacts
+      - name: Upload packaged artifacts only
         uses: actions/upload-artifact@v4
         with:
           name: sail-er-map-${{ matrix.os }}
-          path: dist/**
+          path: |
+            dist/*.AppImage
+            dist/*.dmg
+            dist/*-mac.zip
+            dist/*.zip
+            dist/*.tar.gz
           if-no-files-found: error
