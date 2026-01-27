@@ -16,6 +16,7 @@ let socket = null;
 let seedInfo = null;
 let entranceMap = null;
 let transitions = [];
+let currentScene = null;
 
 const state = {
   decoupled: false,
@@ -52,7 +53,6 @@ function connect() {
     setStatus("Connected", "pill pill-accent");
     connectBtn.disabled = true;
     disconnectBtn.disabled = false;
-    socket.send(JSON.stringify({ type: "handshake" }));
   });
 
   socket.addEventListener("close", () => {
@@ -82,6 +82,7 @@ function loadState() {
     .then((data) => {
       if (data.seedInfo) seedInfo = data.seedInfo;
       if (data.entranceMap) entranceMap = data.entranceMap;
+      if (data.currentScene) currentScene = data.currentScene;
       if (Array.isArray(data.transitions)) transitions = data.transitions;
       updateSeedStatus();
       render();
@@ -92,8 +93,6 @@ function loadState() {
 
 function handlePayload(payload) {
   switch (payload.type) {
-    case "handshake_ack":
-      return;
     case "seed_info":
       seedInfo = payload;
       updateSeedStatus();
@@ -101,6 +100,10 @@ function handlePayload(payload) {
     case "entrance_map":
       entranceMap = payload;
       render();
+      return;
+    case "current_scene":
+      currentScene = payload;
+      renderTransitions();
       return;
     case "transition":
       transitions.push(payload);
@@ -117,6 +120,15 @@ function handlePayload(payload) {
 
 function renderTransitions() {
   transitionList.innerHTML = "";
+  if (currentScene) {
+    const current = document.createElement("div");
+    current.className = "feed-item";
+    current.innerHTML = `
+      <strong>Current Scene</strong>
+      ${hex(currentScene.sceneNum)} (spawn ${currentScene.spawn})
+    `;
+    transitionList.appendChild(current);
+  }
   const last = transitions.slice(-25).reverse();
   for (const t of last) {
     const item = document.createElement("div");
