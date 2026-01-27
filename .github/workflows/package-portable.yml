@@ -54,10 +54,10 @@ jobs:
           path: dist/*.dmg
           if-no-files-found: error
 
-      - name: Upload Windows portable EXE only
+      - name: Upload Windows ZIP only
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: sail-er-map-windows
-          path: dist/*portable*.exe
+          path: dist/*.zip
           if-no-files-found: error

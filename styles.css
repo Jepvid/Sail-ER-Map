@@ -286,6 +286,8 @@ button:hover:not(:disabled) {
   border-radius: 16px;
   border: 1px dashed #dbcdbf;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #mapSvg {
@@ -293,6 +295,8 @@ button:hover:not(:disabled) {
   height: 100%;
   display: block;
   cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #mapSvg:active {

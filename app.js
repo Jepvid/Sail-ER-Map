@@ -17,6 +17,7 @@ let seedInfo = null;
 let entranceMap = null;
 let transitions = [];
 let currentScene = null;
+let pollTimer = null;
 
 const state = {
   decoupled: false,
@@ -53,12 +54,19 @@ function connect() {
     setStatus("Connected", "pill pill-accent");
     connectBtn.disabled = true;
     disconnectBtn.disabled = false;
+    if (pollTimer) clearInterval(pollTimer);
+    // Fallback: poll state so the map stays live even if WS misses a packet.
+    pollTimer = setInterval(loadState, 3000);
   });
 
   socket.addEventListener("close", () => {
     setStatus("Disconnected", "pill");
     connectBtn.disabled = false;
     disconnectBtn.disabled = true;
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
   });
 
   socket.addEventListener("message", (event) => {
@@ -72,6 +80,10 @@ function disconnect() {
   if (socket) {
     socket.close();
     socket = null;
+  }
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
   }
 }
 
@@ -353,11 +365,13 @@ function buildGroupConnections(connections, groupByEntrance) {
     if (!fromGroup || !toGroup) continue;
     const a = Number(c.fromEntrance);
     const b = Number(c.toEntrance);
-    const edgeKey = state.decoupled
-      ? `${a}=>${b}`
-      : a <= b
-        ? `${a}<=>${b}`
-        : `${b}<=>${a}`;
+    const fromLabel = (c.fromName || hex(c.fromEntrance)).toLowerCase();
+    const toLabel = (c.toName || hex(c.toEntrance)).toLowerCase();
+    const coupledKey =
+      fromLabel <= toLabel
+        ? `${fromGroup}|${fromLabel}<=>${toGroup}|${toLabel}`
+        : `${toGroup}|${toLabel}<=>${fromGroup}|${fromLabel}`;
+    const edgeKey = state.decoupled ? `${a}=>${b}` : coupledKey;
     if (seen.has(edgeKey)) continue;
     seen.add(edgeKey);
     edges.push({
