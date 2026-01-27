@@ -137,24 +137,29 @@ function render() {
 
   emptyState.style.display = "none";
 
-  const connections = entranceMap.connections.slice(0, 200);
-  const ids = Array.from(new Set(connections.flatMap((c) => [c.fromEntrance, c.toEntrance])));
-  const adjacency = buildAdjacency(connections);
-  const clusters = findClusters(ids, adjacency);
-  const nameByEntrance = buildEntranceNameMap(connections);
+  const connections = entranceMap.connections.slice(0, 400);
+  const groupByEntrance = buildEntranceGroupMap(connections);
+  const groupConnections = buildGroupConnections(connections, groupByEntrance);
+  const groupIds = Array.from(
+    new Set(groupConnections.flatMap((c) => [c.fromGroup, c.toGroup])),
+  );
+  const adjacency = buildAdjacency(groupConnections);
+  const clusters = findClusters(groupIds, adjacency);
+  const positions = layoutClusters(clusters, adjacency, groupConnections, 1200, 800);
 
-  const positions = layoutClusters(clusters, adjacency, 1200, 800);
-
-  connections.forEach((c) => {
-    const from = positions.get(c.fromEntrance);
-    const to = positions.get(c.toEntrance);
+  groupConnections.forEach((c) => {
+    const from = positions.get(c.fromGroup);
+    const to = positions.get(c.toGroup);
     if (!from || !to) return;
+
+    const midX = (from.x + to.x) / 2;
+    const midY = (from.y + to.y) / 2 - 40;
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("class", "edge");
     path.setAttribute(
       "d",
-      `M ${from.x} ${from.y} Q ${(from.x + to.x) / 2} ${(from.y + to.y) / 2 - 40} ${to.x} ${to.y}`,
+      `M ${from.x} ${from.y} Q ${midX} ${midY} ${to.x} ${to.y}`,
     );
 
     if (state.decoupled) {
@@ -165,21 +170,32 @@ function render() {
     }
 
     edgesLayer.appendChild(path);
+
+    const labelText = formatGroupEdgeLabel(c);
+    if (labelText) {
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("class", "node-label");
+      label.setAttribute("x", midX + 8);
+      label.setAttribute("y", midY - 6);
+      label.textContent = labelText;
+      nodesLayer.appendChild(label);
+    }
   });
 
-  ids.forEach((id) => {
+  groupIds.forEach((id) => {
     const pos = positions.get(id);
+    if (!pos) return;
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("class", "node");
     circle.setAttribute("cx", pos.x);
     circle.setAttribute("cy", pos.y);
-    circle.setAttribute("r", 10);
+    circle.setAttribute("r", 16);
 
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
     label.setAttribute("class", "node-label");
-    label.setAttribute("x", pos.x + 14);
-    label.setAttribute("y", pos.y + 4);
-    label.textContent = nameByEntrance.get(id) || hex(id);
+    label.setAttribute("x", pos.x + 20);
+    label.setAttribute("y", pos.y + 5);
+    label.textContent = id;
 
     nodesLayer.appendChild(circle);
     nodesLayer.appendChild(label);
@@ -194,10 +210,13 @@ function hex(value) {
 function buildAdjacency(connections) {
   const adjacency = new Map();
   for (const c of connections) {
-    if (!adjacency.has(c.fromEntrance)) adjacency.set(c.fromEntrance, new Set());
-    if (!adjacency.has(c.toEntrance)) adjacency.set(c.toEntrance, new Set());
-    adjacency.get(c.fromEntrance).add(c.toEntrance);
-    adjacency.get(c.toEntrance).add(c.fromEntrance);
+    const from = c.fromEntrance ?? c.fromGroup;
+    const to = c.toEntrance ?? c.toGroup;
+    if (from === undefined || to === undefined) continue;
+    if (!adjacency.has(from)) adjacency.set(from, new Set());
+    if (!adjacency.has(to)) adjacency.set(to, new Set());
+    adjacency.get(from).add(to);
+    adjacency.get(to).add(from);
   }
   return adjacency;
 }
@@ -213,6 +232,53 @@ function buildEntranceNameMap(connections) {
     }
   }
   return map;
+}
+
+function buildEntranceGroupMap(connections) {
+  const map = new Map();
+  for (const c of connections) {
+    if (c.fromGroupName && !map.has(c.fromEntrance)) {
+      map.set(c.fromEntrance, c.fromGroupName);
+    }
+    if (c.toGroupName && !map.has(c.toEntrance)) {
+      map.set(c.toEntrance, c.toGroupName);
+    }
+  }
+  return map;
+}
+
+function buildGroupConnections(connections, groupByEntrance) {
+  const edges = [];
+  const seen = new Set();
+  for (const c of connections) {
+    const fromGroup = groupByEntrance.get(c.fromEntrance) || c.fromGroupName || "Unknown";
+    const toGroup = groupByEntrance.get(c.toEntrance) || c.toGroupName || "Unknown";
+    if (!fromGroup || !toGroup) continue;
+    const edgeKey = `${c.fromEntrance}=>${c.toEntrance}`;
+    if (seen.has(edgeKey)) continue;
+    seen.add(edgeKey);
+    edges.push({
+      fromGroup,
+      toGroup,
+      entrances: [
+        {
+          fromEntrance: c.fromEntrance,
+          toEntrance: c.toEntrance,
+          fromName: c.fromName,
+          toName: c.toName,
+        },
+      ],
+    });
+  }
+  return edges;
+}
+
+function formatGroupEdgeLabel(edge) {
+  if (!edge.entrances || edge.entrances.length === 0) return "";
+  const first = edge.entrances[0];
+  const fromLabel = first.fromName || hex(first.fromEntrance);
+  const extra = edge.entrances.length - 1;
+  return extra > 0 ? `${fromLabel} (+${extra})` : fromLabel;
 }
 
 function findClusters(ids, adjacency) {
@@ -239,7 +305,7 @@ function findClusters(ids, adjacency) {
   return clusters;
 }
 
-function layoutClusters(clusters, adjacency, width, height) {
+function layoutClusters(clusters, adjacency, edges, width, height) {
   const positions = new Map();
   const padding = 80;
   const gridCols = Math.ceil(Math.sqrt(clusters.length));
@@ -251,32 +317,94 @@ function layoutClusters(clusters, adjacency, width, height) {
     const row = Math.floor(idx / gridCols);
     const cx = padding + col * cellW + cellW / 2;
     const cy = padding + row * cellH + cellH / 2;
-    layoutCluster(cluster, adjacency, cx, cy, cellW * 0.7, cellH * 0.7, positions);
+    const nodeSet = new Set(cluster);
+    const clusterEdges = edges.filter((e) => nodeSet.has(e.fromGroup) && nodeSet.has(e.toGroup));
+    layoutDirectedCluster(cluster, clusterEdges, cx, cy, cellW * 0.82, cellH * 0.82, positions);
   });
 
   return positions;
 }
 
-function layoutCluster(nodes, adjacency, cx, cy, spanX, spanY, positions) {
+function layoutDirectedCluster(nodes, edges, cx, cy, spanX, spanY, positions) {
   const n = nodes.length;
   if (n === 1) {
     positions.set(nodes[0], { x: cx, y: cy });
     return;
   }
 
-  const levels = buildLevels(nodes, adjacency);
-  reduceCrossings(levels, adjacency, 4);
+  const levels = buildDirectedLevels(nodes, edges);
+  const undirectedAdj = buildAdjacency(edges);
+  reduceCrossings(levels, undirectedAdj, 4);
   const levelCount = levels.length;
-  const layerGap = spanY / Math.max(levelCount, 1);
+  const layerGap = spanX / Math.max(levelCount - 1, 1);
 
   levels.forEach((level, i) => {
-    const y = cy - spanY / 2 + layerGap * (i + 0.5);
-    const nodeGap = spanX / Math.max(level.length, 1);
+    const x =
+      levelCount === 1 ? cx : cx - spanX / 2 + layerGap * i;
+    const nodeGap = spanY / Math.max(level.length, 1);
     level.forEach((id, j) => {
-      const x = cx - spanX / 2 + nodeGap * (j + 0.5);
+      const y = cy - spanY / 2 + nodeGap * (j + 0.5);
       positions.set(id, { x, y });
     });
   });
+}
+
+function buildDirectedLevels(nodes, edges) {
+  const indegree = new Map();
+  const outgoing = new Map();
+  nodes.forEach((n) => {
+    indegree.set(n, 0);
+    outgoing.set(n, []);
+  });
+
+  for (const e of edges) {
+    if (!indegree.has(e.fromGroup) || !indegree.has(e.toGroup)) continue;
+    indegree.set(e.toGroup, (indegree.get(e.toGroup) || 0) + 1);
+    outgoing.get(e.fromGroup).push(e.toGroup);
+  }
+
+  const layerByNode = new Map();
+  const queue = [];
+  for (const n of nodes) {
+    if ((indegree.get(n) || 0) === 0) {
+      queue.push(n);
+      layerByNode.set(n, 0);
+    }
+  }
+
+  while (queue.length) {
+    const cur = queue.shift();
+    const curLayer = layerByNode.get(cur) || 0;
+    for (const next of outgoing.get(cur) || []) {
+      const nextLayer = Math.max(layerByNode.get(next) || 0, curLayer + 1);
+      layerByNode.set(next, nextLayer);
+      indegree.set(next, (indegree.get(next) || 0) - 1);
+      if ((indegree.get(next) || 0) <= 0) {
+        queue.push(next);
+      }
+    }
+  }
+
+  // Handle cycles or disconnected nodes by relaxing edges a few times.
+  nodes.forEach((n) => {
+    if (!layerByNode.has(n)) layerByNode.set(n, 0);
+  });
+  for (let i = 0; i < 4; i++) {
+    for (const e of edges) {
+      const fromLayer = layerByNode.get(e.fromGroup) || 0;
+      const toLayer = layerByNode.get(e.toGroup) || 0;
+      if (toLayer <= fromLayer) {
+        layerByNode.set(e.toGroup, fromLayer + 1);
+      }
+    }
+  }
+
+  const maxLayer = Math.max(0, ...Array.from(layerByNode.values()));
+  const levels = Array.from({ length: maxLayer + 1 }, () => []);
+  for (const n of nodes) {
+    levels[layerByNode.get(n) || 0].push(n);
+  }
+  return levels;
 }
 
 function buildLevels(nodes, adjacency) {
