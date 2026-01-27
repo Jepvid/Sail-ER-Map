@@ -146,13 +146,13 @@ function render() {
   const adjacency = buildAdjacency(groupConnections);
   const clusters = findClusters(groupIds, adjacency);
   const positions = layoutClusters(clusters, adjacency, groupConnections, 8000, 8000);
+  compactPositions(groupIds, groupConnections, positions);
   const hubRadius = 100;
   const portRadius = 7.5;
-  const sharedRadius = hubRadius + 24;
-  const outPorts = computePorts(groupConnections, positions, sharedRadius, "out");
-  const inPorts = state.decoupled
-    ? computePorts(groupConnections, positions, hubRadius + 18, "in")
-    : outPorts;
+  const outRadius = hubRadius + 26;
+  const inRadius = state.decoupled ? hubRadius + 18 : hubRadius + 26;
+  const outPorts = computePorts(groupConnections, positions, outRadius, "out");
+  const inPorts = computePorts(groupConnections, positions, inRadius, "in");
 
   groupConnections.forEach((c) => {
     const fromHub = positions.get(c.fromGroup);
@@ -240,6 +240,7 @@ function render() {
     circle.setAttribute("r", portRadius);
     nodesLayer.appendChild(circle);
   }
+
 }
 
 function hex(value) {
@@ -432,6 +433,79 @@ function layoutClusters(clusters, adjacency, edges, width, height) {
   });
 
   return positions;
+}
+
+function compactPositions(nodeIds, edges, positions) {
+  const vel = new Map();
+  for (const id of nodeIds) {
+    vel.set(id, { x: 0, y: 0 });
+  }
+
+  const attraction = 0.015;
+  const repulsion = 120000;
+  const damping = 0.82;
+  const ideal = 520;
+
+  for (let iter = 0; iter < 140; iter++) {
+    // Repulsion between all hubs.
+    for (let i = 0; i < nodeIds.length; i++) {
+      const a = nodeIds[i];
+      const pa = positions.get(a);
+      if (!pa) continue;
+      for (let j = i + 1; j < nodeIds.length; j++) {
+        const b = nodeIds[j];
+        const pb = positions.get(b);
+        if (!pb) continue;
+        let dx = pb.x - pa.x;
+        let dy = pb.y - pa.y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 1) d2 = 1;
+        const d = Math.sqrt(d2);
+        const force = repulsion / d2;
+        dx /= d;
+        dy /= d;
+        const va = vel.get(a);
+        const vb = vel.get(b);
+        va.x -= dx * force;
+        va.y -= dy * force;
+        vb.x += dx * force;
+        vb.y += dy * force;
+      }
+    }
+
+    // Attraction along edges.
+    for (const e of edges) {
+      const a = e.fromGroup;
+      const b = e.toGroup;
+      const pa = positions.get(a);
+      const pb = positions.get(b);
+      if (!pa || !pb) continue;
+      let dx = pb.x - pa.x;
+      let dy = pb.y - pa.y;
+      let d = Math.hypot(dx, dy) || 1;
+      dx /= d;
+      dy /= d;
+      const stretch = d - ideal;
+      const force = attraction * stretch;
+      const va = vel.get(a);
+      const vb = vel.get(b);
+      va.x += dx * force;
+      va.y += dy * force;
+      vb.x -= dx * force;
+      vb.y -= dy * force;
+    }
+
+    // Integrate velocity.
+    for (const id of nodeIds) {
+      const p = positions.get(id);
+      const v = vel.get(id);
+      if (!p || !v) continue;
+      v.x *= damping;
+      v.y *= damping;
+      p.x += v.x;
+      p.y += v.y;
+    }
+  }
 }
 
 function layoutDirectedCluster(nodes, edges, cx, cy, spanX, spanY, positions) {
