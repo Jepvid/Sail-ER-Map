@@ -225,13 +225,6 @@ function render() {
       const y = baseY + oy;
       if (!farFromHubs(x, y)) continue;
       if (!isFree(x, y, pad)) continue;
-      const leader = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      leader.setAttribute("class", "label-leader");
-      leader.setAttribute("x1", baseX);
-      leader.setAttribute("y1", baseY);
-      leader.setAttribute("x2", x - nx * 6);
-      leader.setAttribute("y2", y - ny * 6);
-      nodesLayer.appendChild(leader);
       const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
       label.setAttribute("class", cls);
       label.setAttribute("x", x);
@@ -244,13 +237,6 @@ function render() {
     // Fallback: place it even if crowded.
     const fx = baseX + nx * 24 + ux * 10;
     const fy = baseY + ny * 24 + uy * 10;
-    const leader = document.createElementNS("http://www.w3.org/2000/svg", "line");
-    leader.setAttribute("class", "label-leader");
-    leader.setAttribute("x1", baseX);
-    leader.setAttribute("y1", baseY);
-    leader.setAttribute("x2", fx - nx * 6);
-    leader.setAttribute("y2", fy - ny * 6);
-    nodesLayer.appendChild(leader);
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
     label.setAttribute("class", cls);
     label.setAttribute("x", fx);
@@ -318,8 +304,8 @@ function render() {
     const destY = to.y - uy * 10;
     const angle = Math.atan2(dy, dx);
     const lerp = (a, b, t) => a + (b - a) * t;
-    const fromLabelBase = { x: lerp(from.x, to.x, 0.38), y: lerp(from.y, to.y, 0.38) };
-    const toLabelBase = { x: lerp(from.x, to.x, 0.68), y: lerp(from.y, to.y, 0.68) };
+    const fromLabelBase = { x: lerp(from.x, to.x, 0.2), y: lerp(from.y, to.y, 0.2) };
+    const toLabelBase = { x: lerp(from.x, to.x, 0.8), y: lerp(from.y, to.y, 0.8) };
 
     // Curve edges away from hubs when a straight line would collide.
     let nearCount = 0;
@@ -685,14 +671,18 @@ function layoutClusters(clusters, adjacency, edges, width, height) {
 function compactPositions(nodeIds, edges, positions) {
   const vel = new Map();
   const neighbors = new Map();
+  const degree = new Map();
   for (const id of nodeIds) {
     vel.set(id, { x: 0, y: 0 });
     neighbors.set(id, new Set());
+    degree.set(id, 0);
   }
 
   for (const e of edges) {
     neighbors.get(e.fromGroup)?.add(e.toGroup);
     neighbors.get(e.toGroup)?.add(e.fromGroup);
+    degree.set(e.fromGroup, (degree.get(e.fromGroup) || 0) + 1);
+    degree.set(e.toGroup, (degree.get(e.toGroup) || 0) + 1);
   }
 
   // Keep this step lightweight; it runs often.
@@ -701,7 +691,9 @@ function compactPositions(nodeIds, edges, positions) {
   const damping = 0.82;
   const ideal = 420;
   const baryPull = 0.045;
-  const minDist = 300;
+  const baseMinDist = 520;
+  const densityFactor = 22;
+  const maxMinDist = 1400;
 
   for (let iter = 0; iter < 60; iter++) {
     // Repulsion between all hubs.
@@ -799,10 +791,13 @@ function compactPositions(nodeIds, edges, positions) {
         let dx = pb.x - pa.x;
         let dy = pb.y - pa.y;
         let d = Math.hypot(dx, dy) || 1;
-        if (d >= minDist) continue;
+        const degA = degree.get(a) || 0;
+        const degB = degree.get(b) || 0;
+        const pairMin = Math.min(maxMinDist, baseMinDist + (degA + degB) * densityFactor);
+        if (d >= pairMin) continue;
         dx /= d;
         dy /= d;
-        const push = (minDist - d) * 0.5;
+        const push = (pairMin - d) * 0.5;
         pa.x -= dx * push;
         pa.y -= dy * push;
         pb.x += dx * push;
