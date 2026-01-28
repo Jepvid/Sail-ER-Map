@@ -592,15 +592,11 @@ function resolveAreaFromName(name, sceneId, resolution) {
 function findGroupByName(name, groupNames) {
   const target = normalizeName(name);
   if (!target) return null;
-  let best = null;
   for (const group of groupNames) {
     const normalized = normalizeName(group);
     if (normalized === target) return group;
-    if (normalized.includes(target) || target.includes(normalized)) {
-      best = best || group;
-    }
   }
-  return best;
+  return null;
 }
 
 function normalizeName(value) {
