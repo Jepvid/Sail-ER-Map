@@ -78,6 +78,15 @@ body {
   color: var(--muted);
 }
 
+.title .version {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .status {
   display: flex;
   gap: 10px;

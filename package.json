@@ -16,6 +16,7 @@
   "build": {
     "appId": "com.hm64.sailermap",
     "productName": "Sail ER Map",
+    "artifactName": "${productName}.${ext}",
     "directories": {
       "output": "dist"
     },
