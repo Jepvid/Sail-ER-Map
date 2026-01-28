@@ -5,6 +5,8 @@ const wsUrlInput = document.getElementById("wsUrl");
 const connectBtn = document.getElementById("connectBtn");
 const disconnectBtn = document.getElementById("disconnectBtn");
 const loadStateBtn = document.getElementById("loadStateBtn");
+const debugPortsBtn = document.getElementById("debugPortsBtn");
+const locateBtn = document.getElementById("locateBtn");
 const currentScenePill = document.getElementById("currentScenePill");
 const emptyState = document.getElementById("emptyState");
 
@@ -19,12 +21,20 @@ let transitions = [];
 let currentScene = null;
 let pollTimer = null;
 
+const CANVAS_SIZE = 10000;
+const LOCATE_VIEW_SIZE = 500;
+const SPAWN_GROUP = "Spawns/Warp Songs/Owls";
+const SPAWN_HUB_RADIUS = 50;
+
 const state = {
   decoupled: false,
-  viewBox: { x: 0, y: 0, w: 1000, h: 1000 },
+  viewBox: { x: 0, y: 0, w: CANVAS_SIZE, h: CANVAS_SIZE },
   isPanning: false,
   panStart: { x: 0, y: 0, vx: 0, vy: 0 },
-  lastCanvas: { w: 1000, h: 1000 },
+  lastCanvas: { w: CANVAS_SIZE, h: CANVAS_SIZE },
+  showPorts: false,
+  currentGroupId: null,
+  lastPositions: null,
 };
 
 function setStatus(text, cls = "pill") {
@@ -155,6 +165,10 @@ function render() {
   const connections = entranceMap.connections.slice(0, 400);
   const groupByEntrance = buildEntranceGroupMap(connections);
   const groupConnections = buildGroupConnections(connections, groupByEntrance);
+  const spawnHubIds = new Set();
+  for (const edge of groupConnections) {
+    if (edge.fromIsSpawn) spawnHubIds.add(edge.fromGroup);
+  }
   const groupIds = Array.from(
     new Set(groupConnections.flatMap((c) => [c.fromGroup, c.toGroup])),
   );
@@ -163,6 +177,8 @@ function render() {
   const clusters = findClusters(groupIds, adjacency);
   const canvasSize = getCanvasSize(groupIds.length, groupConnections.length);
   const positions = layoutClusters(clusters, adjacency, groupConnections, canvasSize.w, canvasSize.h);
+  state.currentGroupId = currentGroupId;
+  state.lastPositions = positions;
   compactPositions(groupIds, groupConnections, positions);
   const hubRadius = 75;
   resolveCollisions(groupIds, groupConnections, positions, hubRadius);
@@ -254,14 +270,22 @@ function render() {
   groupIds.forEach((id) => {
     const pos = positions.get(id);
     if (!pos) return;
+    const isSpawnHub = spawnHubIds.has(id);
+    const nodeRadius = isSpawnHub ? SPAWN_HUB_RADIUS : hubRadius;
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute(
       "class",
-      id === currentGroupId ? "hub-node hub-node-current" : "hub-node",
+      id === currentGroupId
+        ? isSpawnHub
+          ? "hub-node hub-node-current hub-node-spawn"
+          : "hub-node hub-node-current"
+        : isSpawnHub
+          ? "hub-node hub-node-spawn"
+          : "hub-node",
     );
     circle.setAttribute("cx", pos.x);
     circle.setAttribute("cy", pos.y);
-    circle.setAttribute("r", hubRadius);
+    circle.setAttribute("r", nodeRadius);
 
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
     label.setAttribute("class", "hub-label");
@@ -271,10 +295,10 @@ function render() {
 
     nodesLayer.appendChild(circle);
     nodesLayer.appendChild(label);
-    markOccupied(pos.x, pos.y, hubRadius + 46);
+    markOccupied(pos.x, pos.y, nodeRadius + 46);
   });
 
-  // Draw ports after hubs.
+  // Track port positions and render them only when debugging.
   const drawn = new Set();
   for (const port of [...outPorts.values(), ...inPorts.values()]) {
     const key = `${port.x.toFixed(2)}:${port.y.toFixed(2)}`;
@@ -390,23 +414,10 @@ function buildAdjacency(connections) {
 }
 
 function getCanvasSize(nodeCount, edgeCount) {
-  const base = 2400;
-  const density = Math.max(1, Math.sqrt(nodeCount));
-  const edgeBoost = Math.min(3200, edgeCount * 6);
-  const size = Math.min(12000, Math.round(base + density * 900 + edgeBoost));
-  return { w: size, h: size };
+  return { w: CANVAS_SIZE, h: CANVAS_SIZE };
 }
 
 function ensureCanvasSize(target) {
-  if (target.w > state.viewBox.w || target.h > state.viewBox.h) {
-    state.viewBox = {
-      x: state.viewBox.x,
-      y: state.viewBox.y,
-      w: Math.max(state.viewBox.w, target.w),
-      h: Math.max(state.viewBox.h, target.h),
-    };
-    updateViewBox();
-  }
   state.lastCanvas = target;
 }
 
@@ -424,13 +435,14 @@ function buildEntranceNameMap(connections) {
 }
 
 function buildEntranceGroupMap(connections) {
+  const resolution = buildGroupResolution(connections);
   const map = new Map();
   for (const c of connections) {
     if (!map.has(c.fromEntrance)) {
-      map.set(c.fromEntrance, getFromGroupKey(c));
+      map.set(c.fromEntrance, getFromGroupKey(c, resolution));
     }
     if (!map.has(c.toEntrance)) {
-      map.set(c.toEntrance, getToGroupKey(c));
+      map.set(c.toEntrance, getToGroupKey(c, resolution));
     }
   }
   return map;
@@ -451,13 +463,20 @@ function buildGroupConnections(connections, groupByEntrance) {
       fromLabel <= toLabel
         ? `${fromGroup}|${fromLabel}<=>${toGroup}|${toLabel}`
         : `${toGroup}|${toLabel}<=>${fromGroup}|${fromLabel}`;
-    const edgeKey = state.decoupled ? `${a}=>${b}` : coupledKey;
+    const oneWay =
+      state.decoupled ||
+      c.fromTypeName === "One Way" ||
+      c.toTypeName === "One Way" ||
+      c.fromGroupName === SPAWN_GROUP ||
+      c.toGroupName === SPAWN_GROUP;
+    const edgeKey = oneWay ? `${a}=>${b}` : coupledKey;
     if (seen.has(edgeKey)) continue;
     seen.add(edgeKey);
     edges.push({
       id: edgeKey,
       fromGroup,
       toGroup,
+      fromIsSpawn: c.fromGroupName === SPAWN_GROUP,
       fromEntrance: c.fromEntrance,
       toEntrance: c.toEntrance,
       fromGroupId: c.fromGroupId,
@@ -498,21 +517,97 @@ function resolveCurrentGroupId(currentScenePacket, connections, groupByEntrance)
   return null;
 }
 
-function getFromGroupKey(c) {
-  const oneWayGroup = c.fromGroupId === 0;
+function getFromGroupKey(c, resolution) {
   const name = c.fromName || "Unknown";
-  if (oneWayGroup) {
-    // Spawns/warps become their own hubs; owls stay grouped.
-    if (name.toLowerCase().includes("owl")) {
-      return c.fromGroupName || "Owls";
-    }
-    return name;
+  if (c.fromGroupName !== SPAWN_GROUP) return c.fromGroupName || "Unknown";
+  if (name.toLowerCase().includes("owl")) {
+    return resolveAreaFromName(name, c.fromScene, resolution) || name;
   }
-  return c.fromGroupName || "Unknown";
+  return name;
 }
 
-function getToGroupKey(c) {
-  return c.toGroupName || "Unknown";
+function getToGroupKey(c, resolution) {
+  const name = c.toName || "Unknown";
+  if (c.toGroupName !== SPAWN_GROUP) return c.toGroupName || "Unknown";
+  return resolveAreaFromName(name, c.toScene, resolution) || name;
+}
+
+function buildGroupResolution(connections) {
+  const groupNames = new Set();
+  const sceneToGroup = new Map();
+  for (const c of connections) {
+    if (c.fromGroupName && c.fromGroupName !== SPAWN_GROUP) {
+      groupNames.add(c.fromGroupName);
+      if (Number.isFinite(c.fromScene) && c.fromScene >= 0 && !sceneToGroup.has(c.fromScene)) {
+        sceneToGroup.set(c.fromScene, c.fromGroupName);
+      }
+    }
+    if (c.toGroupName && c.toGroupName !== SPAWN_GROUP) {
+      groupNames.add(c.toGroupName);
+      if (Number.isFinite(c.toScene) && c.toScene >= 0 && !sceneToGroup.has(c.toScene)) {
+        sceneToGroup.set(c.toScene, c.toGroupName);
+      }
+    }
+  }
+  return { groupNames: Array.from(groupNames), sceneToGroup };
+}
+
+function resolveAreaFromName(name, sceneId, resolution) {
+  if (Number.isFinite(sceneId) && sceneId >= 0) {
+    const byScene = resolution.sceneToGroup.get(sceneId);
+    if (byScene) return byScene;
+  }
+
+  const cleaned = name
+    .replace(/warp\s*pad/gi, "")
+    .replace(/owl\s*flight/gi, "")
+    .replace(/spawn/gi, "")
+    .trim();
+  if (!cleaned) return null;
+
+  const abbreviationMap = {
+    dmc: "Death Mountain Crater",
+    dmt: "Death Mountain Trail",
+    lh: "Lake Hylia",
+    llr: "Lon Lon Ranch",
+    gv: "Gerudo Valley",
+    gc: "Goron City",
+    sfm: "Sacred Forest Meadow",
+    zf: "Zora's Fountain",
+    zd: "Zora's Domain",
+    kak: "Kakariko Village",
+    hf: "Hyrule Field",
+    dc: "Desert Colossus",
+  };
+
+  const abbrevKey = cleaned.toLowerCase().replace(/[^a-z]/g, "");
+  if (abbreviationMap[abbrevKey]) {
+    const mapped = findGroupByName(abbreviationMap[abbrevKey], resolution.groupNames);
+    if (mapped) return mapped;
+  }
+
+  return findGroupByName(cleaned, resolution.groupNames);
+}
+
+function findGroupByName(name, groupNames) {
+  const target = normalizeName(name);
+  if (!target) return null;
+  let best = null;
+  for (const group of groupNames) {
+    const normalized = normalizeName(group);
+    if (normalized === target) return group;
+    if (normalized.includes(target) || target.includes(normalized)) {
+      best = best || group;
+    }
+  }
+  return best;
+}
+
+function normalizeName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function formatGroupEdgeLabel(edge) {
@@ -577,68 +672,81 @@ function computePorts(edges, positions, radius, mode, hubs, hubRadius) {
     const count = entries.length;
     if (count === 0) continue;
 
-    const avgX = entries.reduce((sum, it) => sum + Math.cos(it.angle), 0) / count;
-    const avgY = entries.reduce((sum, it) => sum + Math.sin(it.angle), 0) / count;
-    const rotation = Math.atan2(avgY, avgX);
     // Dynamic minimum separation: allow tighter spacing for dense hubs,
     // but never let anchors overlap.
     const minSep = Math.max(Math.PI / 18, Math.min(Math.PI / 4, (Math.PI * 1.35) / count));
-    const minSpan = minSep * Math.max(1, count - 1);
-    const maxSpan = Math.PI * 1.5;
-    const span = Math.min(Math.PI * 2, Math.max(minSpan, Math.min(maxSpan, Math.PI * 1.2)));
-    const step = count > 1 ? span / (count - 1) : 0;
-    const baseStart = rotation - span / 2;
-    const rotSamples = Math.min(10, Math.max(4, count));
+    const angles = distributeAngles(entries, minSep);
 
-    let bestPorts = null;
-    let bestScore = Infinity;
-
-    for (let s = 0; s < rotSamples; s++) {
-      const rot = baseStart + (s / rotSamples) * Math.max(step, span / Math.max(rotSamples, 1));
-      const candidate = new Map();
-      let score = 0;
-
-      entries.forEach((item, idx) => {
-        const a = rot + step * idx;
-        const x = origin.x + Math.cos(a) * radius;
-        const y = origin.y + Math.sin(a) * radius;
-        candidate.set(item.key, { x, y, other: item.other });
-      });
-
-      for (const entry of candidate.values()) {
-        const other = entry.other;
-        const len = Math.hypot(other.x - entry.x, other.y - entry.y);
-        score += len;
-
-        const thresh = hubRadius * 1.05;
-        const hubPenalty = 80000;
-        for (const h of hubs) {
-          if (!h || h === origin) continue;
-          const d = distancePointToSegment(h.x, h.y, entry.x, entry.y, other.x, other.y);
-          if (d < thresh) {
-            score += hubPenalty * (1 - d / thresh);
-          }
-        }
-      }
-
-      if (score < bestScore) {
-        bestScore = score;
-        bestPorts = candidate;
-      }
-    }
-
-    if (bestPorts) {
-      for (const entry of entries) {
-        const p = bestPorts.get(entry.key);
-        if (!p) continue;
-        for (const e of entry.edges) {
-          ports.set(e.id, { x: p.x, y: p.y });
-        }
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const a = angles[i];
+      const x = origin.x + Math.cos(a) * radius;
+      const y = origin.y + Math.sin(a) * radius;
+      for (const e of entry.edges) {
+        ports.set(e.id, { x, y });
       }
     }
   }
 
   return ports;
+}
+
+function distributeAngles(entries, minSep) {
+  if (entries.length <= 1) return entries.map((e) => e.angle);
+  const twoPi = Math.PI * 2;
+  const normalized = entries.map((entry, index) => {
+    let a = entry.angle % twoPi;
+    if (a < 0) a += twoPi;
+    return { index, angle: a };
+  });
+  normalized.sort((a, b) => a.angle - b.angle);
+
+  let cut = 0;
+  let maxGap = -Infinity;
+  for (let i = 0; i < normalized.length; i++) {
+    const current = normalized[i].angle;
+    const next = normalized[(i + 1) % normalized.length].angle + (i + 1 === normalized.length ? twoPi : 0);
+    const gap = next - current;
+    if (gap > maxGap) {
+      maxGap = gap;
+      cut = (i + 1) % normalized.length;
+    }
+  }
+
+  const ordered = [];
+  for (let i = 0; i < normalized.length; i++) {
+    ordered.push(normalized[(cut + i) % normalized.length]);
+  }
+
+  let offset = 0;
+  let prev = ordered[0].angle;
+  const unwrapped = ordered.map((item, idx) => {
+    if (idx > 0 && item.angle + offset < prev) {
+      offset += twoPi;
+    }
+    const base = item.angle + offset;
+    prev = base;
+    return { index: item.index, angle: base };
+  });
+
+  for (let i = 1; i < unwrapped.length; i++) {
+    if (unwrapped[i].angle - unwrapped[i - 1].angle < minSep) {
+      unwrapped[i].angle = unwrapped[i - 1].angle + minSep;
+    }
+  }
+  for (let i = unwrapped.length - 2; i >= 0; i--) {
+    if (unwrapped[i + 1].angle - unwrapped[i].angle < minSep) {
+      unwrapped[i].angle = unwrapped[i + 1].angle - minSep;
+    }
+  }
+
+  const result = new Array(entries.length);
+  for (const item of unwrapped) {
+    let a = item.angle % twoPi;
+    if (a < 0) a += twoPi;
+    result[item.index] = a;
+  }
+  return result;
 }
 
 function distancePointToSegment(px, py, ax, ay, bx, by) {
@@ -1053,6 +1161,19 @@ function updateViewBox() {
   );
 }
 
+function locatePlayer() {
+  if (!state.currentGroupId || !state.lastPositions) return;
+  const pos = state.lastPositions.get(state.currentGroupId);
+  if (!pos) return;
+  const size = LOCATE_VIEW_SIZE;
+  let x = pos.x - size / 2;
+  let y = pos.y - size / 2;
+  x = Math.max(0, Math.min(CANVAS_SIZE - size, x));
+  y = Math.max(0, Math.min(CANVAS_SIZE - size, y));
+  state.viewBox = { x, y, w: size, h: size };
+  updateViewBox();
+}
+
 function startPan(event) {
   state.isPanning = true;
   state.panStart.x = event.clientX;
@@ -1100,9 +1221,23 @@ document.getElementById("clearBtn").addEventListener("click", () => {
   emptyState.style.display = "grid";
 });
 
+function setDebugPorts(enabled) {
+  state.showPorts = enabled;
+  document.body.classList.toggle("debug-ports", enabled);
+  if (debugPortsBtn) {
+    debugPortsBtn.textContent = enabled ? "Hide Anchors" : "Show Anchors";
+  }
+}
+
 connectBtn.addEventListener("click", connect);
 disconnectBtn.addEventListener("click", disconnect);
 loadStateBtn.addEventListener("click", loadState);
+if (debugPortsBtn) {
+  debugPortsBtn.addEventListener("click", () => setDebugPorts(!state.showPorts));
+}
+if (locateBtn) {
+  locateBtn.addEventListener("click", locatePlayer);
+}
 
 mapSvg.addEventListener("mousedown", startPan);
 window.addEventListener("mousemove", movePan);
@@ -1111,3 +1246,4 @@ mapSvg.addEventListener("wheel", zoom, { passive: false });
 
 updateViewBox();
 renderCurrentScene();
+setDebugPorts(false);

@@ -255,6 +255,11 @@ button:hover:not(:disabled) {
   background: var(--accent);
 }
 
+.legend-dot-current {
+  background: #1f9d55;
+  box-shadow: 0 0 0 1px #e7ffe7;
+}
+
 .map-header {
   display: flex;
   align-items: center;
@@ -318,6 +323,11 @@ button:hover:not(:disabled) {
   stroke-width: 2px;
 }
 
+.hub-node-spawn {
+  stroke-width: 1.6px;
+  opacity: 0.9;
+}
+
 .hub-node-current {
   fill: #1f9d55;
   stroke: #e7ffe7;
@@ -338,6 +348,11 @@ button:hover:not(:disabled) {
   fill: var(--ink);
   stroke: #fff;
   stroke-width: 1.5px;
+  display: none;
+}
+
+body.debug-ports .port-node {
+  display: block;
 }
 
 .port-label {

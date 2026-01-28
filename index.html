@@ -58,6 +58,10 @@
           <span class="legend-dot"></span>
           <span>Entrance node</span>
         </div>
+        <div class="legend-row">
+          <span class="legend-dot legend-dot-current"></span>
+          <span>Current player location</span>
+        </div>
       </section>
 
       <section class="panel map">
@@ -65,12 +69,14 @@
           <h2>Flowchart</h2>
           <div class="map-tools">
             <div class="scene-pill" id="currentScenePill">Current: —</div>
+            <button id="locateBtn" class="ghost">Locate Player</button>
             <button id="resetBtn" class="ghost">Reset View</button>
             <button id="clearBtn" class="ghost">Clear</button>
+            <button id="debugPortsBtn" class="ghost">Show Anchors</button>
           </div>
         </div>
         <div class="map-shell">
-          <svg id="mapSvg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet">
+          <svg id="mapSvg" viewBox="0 0 10000 10000" preserveAspectRatio="xMidYMid meet">
             <defs>
               <marker
                 id="arrow"
