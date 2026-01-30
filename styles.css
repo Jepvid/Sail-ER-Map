@@ -7,6 +7,11 @@
   --muted: #5e534d;
   --accent: #c1573a;
   --accent-2: #2c6e63;
+  --grotto: #7b4a2f;
+  --spawn: #e7c74a;
+  --dungeon: #6b4bbd;
+  --boss: #c83b3b;
+  --interior: #2a9d8f;
   --panel: #fffdf8;
   --line: #e2d8cf;
   --shadow: 0 18px 40px rgba(20, 17, 15, 0.12);
@@ -213,6 +218,60 @@ button:hover:not(:disabled) {
   color: var(--muted);
 }
 
+.debug-panel {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.debug-output {
+  max-height: 180px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.4;
+  background: #f7f1ea;
+  color: #3a2f27;
+  padding: 8px;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.click-indicator {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 30;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(10, 12, 15, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.click-indicator.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .legend-row {
   display: flex;
   align-items: center;
@@ -262,6 +321,26 @@ button:hover:not(:disabled) {
   height: 10px;
   border-radius: 999px;
   background: var(--accent);
+}
+
+.legend-dot-spawn {
+  background: var(--spawn);
+}
+
+.legend-dot-grotto {
+  background: var(--grotto);
+}
+
+.legend-dot-dungeon {
+  background: var(--dungeon);
+}
+
+.legend-dot-boss {
+  background: var(--boss);
+}
+
+.legend-dot-interior {
+  background: var(--interior);
 }
 
 .legend-dot-current {
@@ -333,8 +412,25 @@ button:hover:not(:disabled) {
 }
 
 .hub-node-spawn {
+  fill: var(--spawn);
   stroke-width: 1.6px;
   opacity: 0.9;
+}
+
+.hub-node-grotto {
+  fill: var(--grotto);
+}
+
+.hub-node-dungeon {
+  fill: var(--dungeon);
+}
+
+.hub-node-boss {
+  fill: var(--boss);
+}
+
+.hub-node-interior {
+  fill: var(--interior);
 }
 
 .hub-node-current {
@@ -376,10 +472,18 @@ body.debug-ports .port-node {
   font-weight: 600;
 }
 
-.label-leader {
-  stroke: rgba(20, 17, 15, 0.45);
-  stroke-width: 1.5px;
-  fill: none;
+.edge-label {
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.edge-label.visible {
+  opacity: 1;
+}
+
+body.show-labels .edge-label {
+  opacity: 1;
 }
 
 .edge {

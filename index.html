@@ -10,6 +10,7 @@
     <div class="bg">
       <div class="grain"></div>
     </div>
+    <div class="click-indicator" id="clickIndicator">Click: —</div>
 
     <header class="hero">
       <div class="brand">
@@ -43,6 +44,13 @@
         <div class="note">
           <span>Live:</span> data streams as soon as the local Sail bridge is running.
         </div>
+        <div class="debug-panel" id="debugPanel">
+          <div class="debug-header">
+            <span>Debug</span>
+            <button id="clearDebugBtn" class="ghost">Clear Log</button>
+          </div>
+          <pre id="debugOutput" class="debug-output"></pre>
+        </div>
       </section>
 
       <section class="panel legend">
@@ -57,7 +65,27 @@
         </div>
         <div class="legend-row">
           <span class="legend-dot"></span>
-          <span>Entrance node</span>
+          <span>Overworld</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-dot legend-dot-dungeon"></span>
+          <span>Dungeon</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-dot legend-dot-boss"></span>
+          <span>Boss</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-dot legend-dot-interior"></span>
+          <span>Interior</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-dot legend-dot-spawn"></span>
+          <span>Spawn / Warp Song</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-dot legend-dot-grotto"></span>
+          <span>Grotto</span>
         </div>
         <div class="legend-row">
           <span class="legend-dot legend-dot-current"></span>
@@ -73,6 +101,7 @@
             <button id="locateBtn" class="ghost">Locate Player</button>
             <button id="resetBtn" class="ghost">Reset View</button>
             <button id="clearBtn" class="ghost">Clear</button>
+            <button id="toggleLabelsBtn" class="ghost">Show Labels</button>
             <button id="debugPortsBtn" class="ghost">Show Anchors</button>
           </div>
         </div>
